@@ -55,18 +55,23 @@ Rlist_cps <- lapply(seq_len(nrow(dat_cps_comp)), function(i) {
 n_cps_comp <- dat_cps_comp$n
 
 
-# Stage 1: Random-effects meta-analysis of correlation matrices ----
+# Stage 1: meta-analysis of correlation matrices ----
+# NOTE: depression uses a FIXED-effects model (method = "FEM"), unlike the
+# dissociation and negative-schema scripts (which use random effects). With only
+# K = 5 studies the random-effects model is not estimable here: REM Stage 1 hits
+# the heterogeneity boundary (two of three Tau2 estimated at 0, OpenMx status 6)
+# and REM Stage 2 fails with a non-positive-definite aCov under every interval and
+# constraint setting. This deviation should also be stated in the Methods/supplement
+# so that manuscript, code and figures agree.
 stage1_cps_comp <- tssem1(Rlist_cps, n_cps_comp, method = "FEM")
 summary(stage1_cps_comp)
 
-## Average correlation matrix under a fixed-effects model
-# sample-size-weighted average of per-study correlation matrices
-rand_corr <- Reduce("+", Map(function(R, n) R * (n - 1), Rlist_cps, n_cps_comp)) /
-             (sum(n_cps_comp) - length(n_cps_comp))
-dimnames(rand_corr) <- list(vars_cps, vars_cps)
-round(rand_corr, 2)
-
-# coef(stage1_cps_comp, select = "random")  # not applicable for FEM
+## Pooled correlation matrix under the fixed-effects model, taken directly from the
+## tssem1() fit. This replaces the earlier 'rand_corr', which was a hand-computed,
+## sample-size-weighted average that was misnamed as random effects and duplicated
+## what the fit already provides.
+fe_corr <- coef(stage1_cps_comp)
+round(fe_corr, 2)
 
 
 #### STAGE 2 ####
@@ -335,7 +340,7 @@ grid.text("Childhood Trauma → Depression → Psychosis mediation model (Fixed-
           gp = gpar(fontsize = 12, fontface = "italic"), y = 0.40)
 
 # PAGE 2: POOLED CORRELATION MATRIX
-corr_disp <- round(rand_corr, 2)
+corr_disp <- round(fe_corr, 2)
 corr_disp[upper.tri(corr_disp)] <- NA
 diag(corr_disp)                 <- NA
 corr_str <- matrix(
