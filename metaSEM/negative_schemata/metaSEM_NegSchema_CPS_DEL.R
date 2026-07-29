@@ -28,6 +28,54 @@ print(head(dat))
 num_cols <- c("n", "mean_age", "%_female", "r_XM", "r_MY", "r_XY")
 dat[num_cols] <- lapply(dat[num_cols], as.numeric)
 
+
+# ---------------------------------------------------------------------------
+# Helpers added by ricardotwumasi for the corrected meta-regressions (issue #2)
+# and the per-cent-mediated confidence interval (issue #3).
+#
+# fit_metareg(): fits meta() with the correct within-study sampling covariances
+#   from asyCov() and a diagonal Tau2 that matches the Stage-1 RE.type = "Diag"
+#   specification, in place of the earlier zero off-diagonal covariances and the
+#   default full (six-parameter) Tau2, which was degenerate at small k. Rows with
+#   a missing moderator are dropped (and Rlist/n subset to match); rerun() is used
+#   if the optimiser does not reach OpenMx status 0 or 1. Use center = FALSE for
+#   the 0/1 sample-type indicator.
+fit_metareg <- function(Rlist, n, mod_raw, center = TRUE) {
+  mod_raw <- suppressWarnings(as.numeric(mod_raw))   # coerce (also covers NOS)
+  keep <- !is.na(mod_raw)
+  Rl <- Rlist[keep]; nn <- n[keep]; m <- mod_raw[keep]
+  if (center) m <- as.numeric(scale(m, scale = FALSE))
+  y  <- t(sapply(Rl, function(R) c(R[2, 1], R[3, 1], R[3, 2])))
+  v  <- asyCov(Rl, nn)
+  re <- Diag(paste0("0.1*Tau2_", 1:3, "_", 1:3))
+  fit <- tryCatch(meta(y = y, v = v, x = matrix(m, ncol = 1), RE.constraints = re),
+                  error = function(e) NULL)
+  if (!is.null(fit)) {
+    st <- tryCatch(fit$mx.fit@output$status$code, error = function(e) NA)
+    if (!is.na(st) && !(st %in% c(0, 1)))
+      fit <- tryCatch(suppressWarnings(rerun(fit, silent = TRUE)), error = function(e) fit)
+  }
+  fit
+}
+
+# metareg_grob(): render a meta-regression table (or a note if the model could
+# not be fitted at all). Boundary fits at small k are still shown, matching the
+# reported output; see issue #7 for the exploratory-reporting caveats.
+metareg_grob <- function(fit, mod_label, outcome) {
+  if (is.null(fit))
+    textGrob("Meta-regression could not be fitted for this moderator.",
+             gp = gpar(fontsize = 12))
+  else
+    tableGrob(meta_to_df(fit, mod_label, outcome), rows = NULL,
+              theme = ttheme_minimal(base_size = 11))
+}
+
+# pct_ci(): format a proportion CI (0-1) as a percentage CI for the % mediated row.
+pct_ci <- function(lb, ub) {
+  f <- function(z) if (is.na(z)) "NA" else paste0(formatC(round(z * 100, 2), digits = 2, format = "f"), "%")
+  paste0("[", f(lb), ", ", f(ub), "]")
+}
+
 # ── shared formatting helpers (used in PDF export) ──────────────────────────
 fmt2 <- function(x) formatC(round(x, 2), digits = 2, format = "f")
 ci   <- function(lb, ub) paste0("[", fmt2(lb), ", ", fmt2(ub), "]")
@@ -130,7 +178,8 @@ stage2_cps <- tssem2(stage1_cps,
                      mx.algebras      = list(
                        ind   = mxAlgebra(a * b,     name = "ind"),
                        dir   = mxAlgebra(c,         name = "dir"),
-                       total = mxAlgebra(c + a * b, name = "total")))
+                       total = mxAlgebra(c + a * b, name = "total"),
+                       pmed  = mxAlgebra(a * b / (c + a * b), name = "pmed")))
 stage2_cps <- metaSEM::rerun(stage2_cps)
 summary(stage2_cps)
 
@@ -277,26 +326,14 @@ print(p_loo_cps)
 
 
 # ── Meta-regression: CPS ────────────────────────────────────────────────────
-dat_cps$age_c    <- as.numeric(scale(dat_cps$mean_age,   scale = FALSE))
-dat_cps$female_c <- as.numeric(scale(dat_cps$`%_female`, scale = FALSE))
-
-cors_mat_cps <- t(sapply(Rlist_cps, function(R) c(R[2,1], R[3,1], R[3,2])))
-colnames(cors_mat_cps) <- c("r_TrNeg", "r_TrCPS", "r_NegCPS")
-
-v1_cps <- (1 - cors_mat_cps[, "r_TrNeg"]^2)^2  / (n_cps - 1)
-v2_cps <- (1 - cors_mat_cps[, "r_TrCPS"]^2)^2  / (n_cps - 1)
-v3_cps <- (1 - cors_mat_cps[, "r_NegCPS"]^2)^2 / (n_cps - 1)
-var_mat_cps <- cbind(v1_cps, 0, 0, v2_cps, 0, v3_cps)
-
-metareg_cps_age <- meta(y = cors_mat_cps, v = var_mat_cps,
-                        x = matrix(dat_cps$age_c, ncol = 1))
-summary(metareg_cps_age)
-
-metareg_cps_female <- meta(y = cors_mat_cps, v = var_mat_cps,
-                           x = matrix(dat_cps$female_c, ncol = 1))
-summary(metareg_cps_female)
-
-# NOS meta-regression not run: NOS data not available for included studies
+# Corrected Stage-1 meta-regressions (issue #2). NOS is now available for every
+# included study, so the NOS meta-regression is run; sample type is added too.
+metareg_cps_age    <- fit_metareg(Rlist_cps, n_cps, dat_cps$mean_age)
+metareg_cps_female <- fit_metareg(Rlist_cps, n_cps, dat_cps$`%_female`)
+metareg_cps_nos    <- fit_metareg(Rlist_cps, n_cps, dat_cps$NOS)
+metareg_cps_sample <- fit_metareg(Rlist_cps, n_cps,
+                                  ifelse(dat_cps$clinical_sample == "GP", 0, 1),
+                                  center = FALSE)
 
 
 # ── PDF export: CPS ──────────────────────────────────────────────────────────
@@ -358,6 +395,9 @@ path_df_cps <- data.frame(
                "—"),
   check.names = FALSE
 )
+# Issue #3: CI for the % of total effect mediated, from the pmed algebra (LB interval)
+path_df_cps[nrow(path_df_cps), "95% CI"] <- pct_ci(algs_cps2["pmed", "lbound"], algs_cps2["pmed", "ubound"])
+
 grid.arrange(
   ptitle("Section 1 — Path Coefficients and Mediation Effects"),
   tableGrob(path_df_cps, rows = NULL, theme = ttheme_minimal(base_size = 12)),
@@ -408,6 +448,20 @@ grid.arrange(
   ptitle("Section 3 — Meta-Regression: % Female as Moderator"),
   tableGrob(meta_to_df(metareg_cps_female, "% Female (grand-mean centred)", "CPS"),
             rows = NULL, theme = ttheme_minimal(base_size = 11)),
+  ncol = 1, heights = c(0.08, 0.92)
+)
+
+# PAGE 10: META-REGRESSION — NOS (STUDY QUALITY); now available for all included studies
+grid.arrange(
+  ptitle("Section 3 — Meta-Regression: Study Quality (NOS) as Moderator"),
+  metareg_grob(metareg_cps_nos, "NOS (grand-mean centred)", "CPS"),
+  ncol = 1, heights = c(0.08, 0.92)
+)
+
+# PAGE 11: META-REGRESSION — SAMPLE TYPE (clinical vs non-clinical; GP = reference)
+grid.arrange(
+  ptitle("Section 3 — Meta-Regression: Sample Type (Clinical vs Non-clinical; GP = reference)"),
+  metareg_grob(metareg_cps_sample, "Sample type (0 = non-clinical/GP, 1 = clinical)", "CPS"),
   ncol = 1, heights = c(0.08, 0.92)
 )
 
@@ -478,7 +532,8 @@ stage2_del <- tssem2(stage1_del,
                      mx.algebras      = list(
                        ind   = mxAlgebra(a * b,     name = "ind"),
                        dir   = mxAlgebra(c,         name = "dir"),
-                       total = mxAlgebra(c + a * b, name = "total")))
+                       total = mxAlgebra(c + a * b, name = "total"),
+                       pmed  = mxAlgebra(a * b / (c + a * b), name = "pmed")))
 stage2_del <- metaSEM::rerun(stage2_del)
 summary(stage2_del)
 
@@ -625,26 +680,14 @@ print(p_loo_del)
 
 
 # ── Meta-regression: Delusions ───────────────────────────────────────────────
-dat_del$age_c    <- as.numeric(scale(dat_del$mean_age,   scale = FALSE))
-dat_del$female_c <- as.numeric(scale(dat_del$`%_female`, scale = FALSE))
-
-cors_mat_del <- t(sapply(Rlist_del, function(R) c(R[2,1], R[3,1], R[3,2])))
-colnames(cors_mat_del) <- c("r_TrNeg", "r_TrDel", "r_NegDel")
-
-v1_del <- (1 - cors_mat_del[, "r_TrNeg"]^2)^2  / (n_del - 1)
-v2_del <- (1 - cors_mat_del[, "r_TrDel"]^2)^2  / (n_del - 1)
-v3_del <- (1 - cors_mat_del[, "r_NegDel"]^2)^2 / (n_del - 1)
-var_mat_del <- cbind(v1_del, 0, 0, v2_del, 0, v3_del)
-
-metareg_del_age <- meta(y = cors_mat_del, v = var_mat_del,
-                        x = matrix(dat_del$age_c, ncol = 1))
-summary(metareg_del_age)
-
-metareg_del_female <- meta(y = cors_mat_del, v = var_mat_del,
-                           x = matrix(dat_del$female_c, ncol = 1))
-summary(metareg_del_female)
-
-# NOS meta-regression not run: NOS data not available for included studies
+# Corrected Stage-1 meta-regressions (issue #2). NOS is now available for every
+# included study, so the NOS meta-regression is run; sample type is added too.
+metareg_del_age    <- fit_metareg(Rlist_del, n_del, dat_del$mean_age)
+metareg_del_female <- fit_metareg(Rlist_del, n_del, dat_del$`%_female`)
+metareg_del_nos    <- fit_metareg(Rlist_del, n_del, dat_del$NOS)
+metareg_del_sample <- fit_metareg(Rlist_del, n_del,
+                                  ifelse(dat_del$clinical_sample == "GP", 0, 1),
+                                  center = FALSE)
 
 
 # ── PDF export: Delusions ─────────────────────────────────────────────────────
@@ -706,6 +749,9 @@ path_df_del <- data.frame(
                "—"),
   check.names = FALSE
 )
+# Issue #3: CI for the % of total effect mediated, from the pmed algebra (LB interval)
+path_df_del[nrow(path_df_del), "95% CI"] <- pct_ci(algs_del2["pmed", "lbound"], algs_del2["pmed", "ubound"])
+
 grid.arrange(
   ptitle("Section 1 — Path Coefficients and Mediation Effects"),
   tableGrob(path_df_del, rows = NULL, theme = ttheme_minimal(base_size = 12)),
@@ -756,6 +802,21 @@ grid.arrange(
   ptitle("Section 3 — Meta-Regression: % Female as Moderator"),
   tableGrob(meta_to_df(metareg_del_female, "% Female (grand-mean centred)", "Delusions"),
             rows = NULL, theme = ttheme_minimal(base_size = 11)),
+  ncol = 1, heights = c(0.08, 0.92)
+)
+
+# PAGE 10: META-REGRESSION — NOS (STUDY QUALITY); now available for all included studies
+grid.arrange(
+  ptitle("Section 3 — Meta-Regression: Study Quality (NOS) as Moderator"),
+  metareg_grob(metareg_del_nos, "NOS (grand-mean centred)", "Delusions"),
+  ncol = 1, heights = c(0.08, 0.92)
+)
+
+# PAGE 11: META-REGRESSION — SAMPLE TYPE (clinical vs non-clinical; GP = reference)
+# Note: at k = 5 this is a boundary fit (Tau2 at 0), so report as exploratory (issue #7).
+grid.arrange(
+  ptitle("Section 3 — Meta-Regression: Sample Type (Clinical vs Non-clinical; GP = reference)"),
+  metareg_grob(metareg_del_sample, "Sample type (0 = non-clinical/GP, 1 = clinical)", "Delusions"),
   ncol = 1, heights = c(0.08, 0.92)
 )
 
