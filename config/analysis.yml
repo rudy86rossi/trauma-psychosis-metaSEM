@@ -1,0 +1,209 @@
+# =============================================================================
+# analysis.yml
+# Every analysis-defining choice for the Bayesian reanalysis. Scientific
+# constants live here, not scattered through R scripts, so that a reviewer can
+# see and change them in one place.
+#
+# Fisher-z is the working scale throughout.
+# =============================================================================
+
+seed: 20260729
+
+# --- inputs ------------------------------------------------------------------
+# Only the upstream workbooks are read. Departures from them are expressed in
+# data/provenance/corrections.csv and data/provenance/quality_scores.csv.
+inputs:
+  dissociation:
+    path: metaSEM/dissociation/metanalisis mediation dissociation workcopy.xlsx
+    sheet: Extraction
+    sha256: 6b81926d43cde9b7749e311827e4b97d2f788af309839abbfe43854875068f6e
+  negative_schema:
+    path: metaSEM/negative_schemata/Negative schemas mediation_workcopy.xlsx
+    sheet: data
+    sha256: e70b23c91585c45f831bc00cc028ed9bb3c10227e1ffea6d14bc10045a0d3e98
+  depression:
+    path: metaSEM/depression/depression_workcopy.xlsx
+    sheet: 1
+    sha256: 5cd2ab63e8446e56ad6cb4980c0f01330998cf7b7ae725d4a023f76f09c91fea
+
+# --- correlation ordering ----------------------------------------------------
+# Fixed everywhere. Matches c(R[2,1], R[3,1], R[3,2]) in the frequentist
+# scripts, the vech order asyCov() returns and the (M.X, X.Y, M.Y) order
+# rcalc() returns.
+pairs: [r_XM, r_XY, r_MY]
+
+# --- pathways ----------------------------------------------------------------
+pathways:
+  dissoc_hal:
+    label: Dissociation to hallucinations
+    source: dissociation
+    vars: [Trauma, Dissociation, Hallucinations]
+  dissoc_del:
+    label: Dissociation to delusions
+    source: dissociation
+    vars: [Trauma, Dissociation, Delusions]
+  dissoc_cps:
+    label: Dissociation to composite psychosis
+    source: dissociation
+    vars: [Trauma, Dissociation, Composite psychosis]
+  negsch_cps:
+    label: Negative schema to composite psychosis
+    source: negative_schema
+    vars: [Trauma, Negative schema, Composite psychosis]
+  negsch_del:
+    label: Negative schema to delusions
+    source: negative_schema
+    vars: [Trauma, Negative schema, Delusions]
+  depress_cps:
+    label: Depression to composite psychosis
+    source: depression
+    vars: [Trauma, Depression, Composite psychosis]
+
+# --- moderators --------------------------------------------------------------
+# One moderator per model. Continuous moderators are centred at the unweighted
+# mean of the studies in that model and divided by `unit`.
+#
+# `nominal_contrast` is the prespecified scientific comparison. It anchors BOTH
+# the prior and the smallest effect size of interest. The fitted coefficient is
+# per `unit`, so:
+#
+#   nominal_span       = diff(nominal_contrast) / unit
+#   sesoi_per_unit     = sesoi_full / nominal_span
+#   prior_beta_unit_sd = prior_beta_full_sd / nominal_span
+#   sesoi_reported     = sesoi_per_unit * supported_span
+#
+# Where the data do not support the nominal contrast the reported contrast is
+# clamped to observed support and its bound scales down with it. The per-unit
+# threshold never changes, so a shorter contrast is not silently granted a more
+# permissive test.
+moderators:
+  age:
+    label: Mean age (per 10 years)
+    unit: 10
+    nominal_contrast: [20, 30]
+    kind: continuous
+  female:
+    label: Female (per 10 percentage points)
+    unit: 10
+    nominal_contrast: [40, 60]
+    kind: continuous
+  nos:
+    label: NOS study quality (per point)
+    unit: 1
+    nominal_contrast: [5, 6]
+    kind: continuous
+  clinical:
+    label: Clinical vs non-clinical sample
+    unit: 1
+    nominal_contrast: [0, 1]
+    kind: binary
+
+# --- decision rule -----------------------------------------------------------
+# Dienes (2020) with the Kruschke (2018) interval rules. Decisions are computed
+# on posterior draws of the FULL contrast, never on a per-unit coefficient.
+decision:
+  sesoi_full: 0.05          # Fisher-z, across the nominal contrast
+  sesoi_grid: [0.01, 0.30, 0.005]     # from, to, by; for the robustness region
+  hdi_prob: 0.95
+  # Derived mediation contrasts get no ROPE verdict: no defensible threshold
+  # exists for a change in ab, and manufacturing one to obtain a categorical
+  # answer is not justified.
+  rope_on_mediation_contrasts: false
+  # The Stan partial-correlation coordinate is a parameterisation quantity, not
+  # a scientific estimand, so it receives no verdict either.
+  rope_on_partial_coordinate: false
+
+# --- priors ------------------------------------------------------------------
+# All on the Fisher-z scale. Moderator slopes are specified on the same
+# full-contrast scale as the SESOI, then divided by the nominal span to give the
+# per-unit coefficient prior. This removes the earlier inconsistency in which a
+# moderator was implicitly more or less regularised purely by its unit choice.
+#
+# prior_beta_full_sd = 0.20 places the SESOI at a quarter of a prior standard
+# deviation, so the prior neither concentrates inside the null interval nor
+# presupposes moderation, and gives a 95 per cent prior interval of roughly
+# +/- 0.39 Fisher-z on the full contrast.
+#
+# Intercepts are weakly informative, NOT literature-informed: see
+# bayesian/docs/prior_scope.md. tau follows Röver (2021).
+priors:
+  primary:
+    alpha_sd: 0.35
+    beta_full_sd: 0.20
+    tau_sd: 0.20
+  grid:
+    alpha_sd: [0.20, 0.35, 0.50]
+    beta_full_sd: [0.10, 0.20, 0.35]
+    tau_sd: [0.10, 0.20, 0.30]
+  weak:                      # frequentist-equivalence check only
+    alpha_sd: 2.0
+    beta_full_sd: 2.0
+    tau_sd: 1.0
+
+# --- reportability guards ----------------------------------------------------
+# A contrast estimated from a single study in one arm carries no between-study
+# information about that arm.
+reportability:
+  continuous_min_k: 4
+  continuous_fragile_k: 5
+  binary_min_per_arm: 2
+  binary_fragile_per_arm: 2
+
+# --- instrument selection ----------------------------------------------------
+# One independent sample contributes at most one correlation triplet to a
+# pathway. Where a sample supplied more than one eligible instrument, the first
+# match in this list is primary and the next is retained as a REPLACEMENT
+# sensitivity analysis. Instruments are never averaged.
+instrument_priority: ["DES-II", "DES", "DES-T", "(PDEQ)", "PDEQ"]
+
+# --- sampling ----------------------------------------------------------------
+sampling:
+  chains: 4
+  iter_warmup: 2000
+  iter_sampling: 3000
+  adapt_delta: 0.95
+  max_treedepth: 12
+  adapt_delta_ladder: [0.95, 0.99, 0.999]
+
+diagnostics:
+  max_rhat: 1.01
+  min_ess_bulk: 400
+  min_ess_tail: 400
+  max_divergent: 0
+  max_treedepth_hits: 0
+  min_ebfmi: 0.2
+
+# --- simulation-based calibration --------------------------------------------
+# Screening level. Six prespecified scenarios exercising the intercept-only code
+# path, continuous and binary moderation, the smallest and largest k,
+# contrasting V_z structures and a clamped reporting contrast.
+sbc:
+  n_datasets: 100
+  retained_draws: 500        # identical for every fit; ranks are 0..500
+  chains: 4
+  iter_warmup: 1000
+  iter_sampling: 1000
+  scenarios:
+    - {id: sbc_null_k10,       pathway: dissoc_hal,  moderator: null}
+    - {id: sbc_cont_k10,       pathway: dissoc_hal,  moderator: age}
+    - {id: sbc_binary_k10,     pathway: dissoc_hal,  moderator: clinical}
+    - {id: sbc_cont_k5,        pathway: depress_cps, moderator: nos}
+    - {id: sbc_clamped_k5,     pathway: depress_cps, moderator: female}
+    - {id: sbc_smallest_k4,    pathway: dissoc_cps,  moderator: age}
+
+# --- sensitivity -------------------------------------------------------------
+sensitivity:
+  prior_grid: true
+  robust_student_t: true
+  student_t_df: 5
+  leave_one_study_out: true
+  alternative_instrument: true
+  vz_weighted: true
+  priorsense: true
+
+# --- excluded from the release -----------------------------------------------
+# Bayes factors were removed: the models were selected after inspecting
+# posterior indirect-effect probabilities and the half-normal direction was
+# taken from the observed posterior median, making the result data-dependent.
+# See bayesian/docs/bayes_factors_removed.md.
+bayes_factors: false

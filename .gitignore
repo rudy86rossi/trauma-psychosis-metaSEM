@@ -1,0 +1,36 @@
+# Generated analysis output. Only promoted, verified bundles are committed, and
+# they are committed explicitly with `git add -f` after the release gates pass.
+_targets/
+bayesian/results/_staging/
+bayesian/results/**/draws/
+
+# Compiled Stan executables. The .stan source is the artefact; the binary is
+# machine-specific and large.
+bayesian/stan/masem_valid
+bayesian/stan/*.exe
+bayesian/stan/*.o
+bayesian/stan/*.hpp
+
+# Full posterior draws and fitted objects. Deposited externally with checksums
+# recorded in the run manifest; they must not enter the public tree.
+*.rds
+*.csv.gz
+
+# renv library. The lockfile is committed; the library is not.
+renv/library/
+renv/local/
+renv/staging/
+renv/python/
+renv/sandbox/
+
+# Editor and platform noise
+.Rhistory
+.RData
+.Rproj.user/
+.DS_Store
+*~
+
+# Corrected source workbooks. Departures from the upstream files are expressed
+# in data/provenance/corrections.csv and data/provenance/quality_scores.csv, so
+# no modified binary is committed.
+data/corrected/

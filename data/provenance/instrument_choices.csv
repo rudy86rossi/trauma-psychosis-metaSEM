@@ -1,0 +1,3 @@
+"pathway","sample_id","studyID","year","instrument","analysis_role","effect_id"
+"dissoc_cps","S014","Blose",2023,"(PDEQ)","sensitivity_alternative_instrument","dissoc_cps:Blose2023:PDEQ"
+"dissoc_cps","S014","Blose",2023,"DES-II","primary","dissoc_cps:Blose2023:DESII"
