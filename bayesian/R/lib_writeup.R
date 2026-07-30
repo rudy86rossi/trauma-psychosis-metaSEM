@@ -42,6 +42,7 @@ read_run <- function(run_dir) {
     sbc         = rd("diagnostics", "sbc_rank_uniformity.csv"),
     sbc_audit   = rd("diagnostics", "sbc_audit.csv"),
     ppc_overall = rd("diagnostics", "ppc_overall.csv"),
+    divergence  = rd("diagnostics", "divergence_policy.csv"),
     ppc_study   = rd("diagnostics", "ppc_study.csv"),
     manifest    = read.csv(file.path(run_dir, "run_manifest.csv"), stringsAsFactors = FALSE))
 }
@@ -274,6 +275,26 @@ write_results_doc <- function(R, cfg, lock, path) {
                     "steps in total. Escalation is recorded per fit in the fit ledger rather than",
                     "summarised away."),
               nrow(esc), nrow(dg), sum(dg$escalations)), "")
+
+  dv <- R$divergence
+  if (!is.null(dv) && nrow(dv)) {
+    add("", sprintf(paste("Divergent transitions: %d in total across all %d fits. Every one of the %d",
+                          "primary fits, whose numbers are reported, had none; no tolerance applies",
+                          "to those."),
+                    dv$divergences, dv$fits, dv$primary_fits), "")
+    if (nzchar(dv$tolerated)) {
+      add(sprintf(paste("%d of the %d sensitivity refits retained a divergence after exhausting the",
+                        "adapt_delta ladder, against a declared cap of %d, namely %s. Deleting a",
+                        "study from an already small pathway can produce a geometry the sampler",
+                        "finds harder than the model being reported. These are named here rather",
+                        "than absorbed into a summary, and the affected refits contribute to the",
+                        "leave-one-study-out counts above."),
+                  dv$sensitivity_fits_with_divergence, dv$sensitivity_fits,
+                  dv$sensitivity_divergence_cap, dv$tolerated), "")
+    } else {
+      add("No sensitivity refit retained a divergent transition either.", "")
+    }
+  }
 
   if (!is.null(R$ppc_overall)) {
     po <- R$ppc_overall[R$ppc_overall$moderator == "null", ]

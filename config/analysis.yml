@@ -173,6 +173,26 @@ diagnostics:
   max_treedepth_hits: 0
   min_ebfmi: 0.2
 
+  # Divergence policy.
+  #
+  # A reported result must rest on a pristine fit, so every PRIMARY fit (both
+  # layers, and the prior predictive) must have zero divergent transitions. That
+  # is not negotiable and no tolerance applies to it.
+  #
+  # A sensitivity refit is a different object. Deleting a study from an already
+  # small pathway, or widening a prior, can produce a geometry the sampler finds
+  # harder than the model being reported. Blocking an entire release on one such
+  # refit would be disproportionate; ignoring it would be worse. So a sensitivity
+  # refit may retain divergences only if it has ALREADY exhausted the
+  # adapt_delta ladder, only up to the cap below, and only if every instance is
+  # named in the diagnostics table and in the results document.
+  #
+  # The cap is one per cent of the sensitivity fits, chosen as a rule rather
+  # than to accommodate an observed count. Exceeding it fails the release.
+  # Every other threshold above applies to every fit without exception.
+  sensitivity_divergence_tolerance_fraction: 0.01
+  sensitivity_max_divergent_per_fit: 10
+
 # --- simulation-based calibration --------------------------------------------
 # Screening level. Six prespecified scenarios exercising the intercept-only code
 # path, continuous and binary moderation, the smallest and largest k,

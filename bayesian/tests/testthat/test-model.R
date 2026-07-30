@@ -161,14 +161,62 @@ test_that("the diagnostic gate fails loudly rather than reporting success", {
                      min_ebfmi = 0.8, escalations = 0)
   expect_true(gate_diagnostic_thresholds(CFG, list(diagnostics = good))$ok)
 
-  for (field in c("max_rhat", "num_divergent", "min_ess_tail")) {
+  for (field in c("max_rhat", "min_ess_tail", "num_max_treedepth", "min_ebfmi")) {
     bad <- good
-    bad[[field]] <- switch(field, max_rhat = 1.05, num_divergent = 3, min_ess_tail = 50)
+    bad[[field]] <- switch(field, max_rhat = 1.05, min_ess_tail = 50,
+                           num_max_treedepth = 4, min_ebfmi = 0.05)
     expect_error(gate_diagnostic_thresholds(CFG, list(diagnostics = bad)),
-                 "breached a diagnostic threshold")
+                 "breached a convergence threshold")
   }
   expect_error(gate_diagnostic_thresholds(CFG, list(diagnostics = good[0, ])),
                "No diagnostics")
+})
+
+test_that("a primary fit gets no divergence tolerance at all", {
+  # A reported result must rest on a pristine fit. The tolerance below exists for
+  # sensitivity refits and must never reach a fit whose numbers are published.
+  base <- data.frame(fit_id = "x", fit_class = "stan_primary", max_rhat = 1.001,
+                     min_ess_bulk = 2000, min_ess_tail = 2000, num_divergent = 1,
+                     num_max_treedepth = 0, min_ebfmi = 0.8, escalations = 2)
+  expect_error(gate_diagnostic_thresholds(CFG, list(diagnostics = base)),
+               "PRIMARY fits retained divergent")
+  base$fit_class <- "brms_primary"
+  expect_error(gate_diagnostic_thresholds(CFG, list(diagnostics = base)),
+               "PRIMARY fits retained divergent")
+  base$fit_class <- "prior_predictive"
+  expect_error(gate_diagnostic_thresholds(CFG, list(diagnostics = base)),
+               "PRIMARY fits retained divergent")
+})
+
+test_that("a sensitivity refit is tolerated only under the declared policy", {
+  mk <- function(n, div, esc = 2, cls = "sens_loso_brms")
+    data.frame(fit_id = paste0("s", seq_len(n)), fit_class = cls, max_rhat = 1.001,
+               min_ess_bulk = 2000, min_ess_tail = 2000,
+               num_divergent = div, num_max_treedepth = 0, min_ebfmi = 0.8,
+               escalations = esc)
+
+  # 200 sensitivity fits, cap is one per cent, so two may retain divergences.
+  d <- mk(200, c(1, 1, rep(0, 198)))
+  out <- gate_diagnostic_thresholds(CFG, list(diagnostics = d))
+  expect_true(out$ok)
+  expect_equal(out$sensitivity_fits_with_divergence, 2)
+  expect_equal(out$sensitivity_divergence_cap, 2)
+  expect_match(out$tolerated, "s1 \\(1\\)")
+
+  # Three exceeds the cap.
+  expect_error(gate_diagnostic_thresholds(CFG,
+                 list(diagnostics = mk(200, c(1, 1, 1, rep(0, 197))))),
+               "above the declared cap")
+
+  # A single fit with many divergences is not a near miss.
+  expect_error(gate_diagnostic_thresholds(CFG,
+                 list(diagnostics = mk(200, c(50, rep(0, 199))))),
+               "per-fit divergence limit")
+
+  # Tolerance applies only after the sampler has been pushed as far as it goes.
+  expect_error(gate_diagnostic_thresholds(CFG,
+                 list(diagnostics = mk(200, c(1, rep(0, 199)), esc = 0))),
+               "without exhausting the adapt_delta ladder")
 })
 
 test_that("rbind_fill unions columns without inventing values", {

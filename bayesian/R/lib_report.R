@@ -246,24 +246,74 @@ gate_fit_completeness <- function(plan, ledger) {
   data.frame(expected = length(expected), completed = length(completed), ok = TRUE)
 }
 
+PRIMARY_CLASSES <- c("stan_primary", "brms_primary", "prior_predictive")
+
 gate_diagnostic_thresholds <- function(cfg, results) {
   d <- results$diagnostics
   if (is.null(d) || !nrow(d)) stop("No diagnostics were produced.")
-  d$passes <- diagnostics_pass(d, cfg)
-  bad <- d[!d$passes, ]
-  if (nrow(bad))
-    stop(nrow(bad), " fits breached a diagnostic threshold, including: ",
-         paste(utils::head(bad$fit_id, 5), collapse = ", "),
+  g <- cfg$diagnostics
+
+  ## Everything except divergences applies to every fit without exception.
+  other_ok <- d$max_rhat < g$max_rhat & d$min_ess_bulk > g$min_ess_bulk &
+    d$min_ess_tail > g$min_ess_tail & d$num_max_treedepth <= g$max_treedepth_hits &
+    d$min_ebfmi > g$min_ebfmi
+  if (any(!other_ok))
+    stop(sum(!other_ok), " fits breached a convergence threshold, including: ",
+         paste(utils::head(d$fit_id[!other_ok], 5), collapse = ", "),
          ". Max R-hat ", signif(max(d$max_rhat), 5),
-         ", divergences ", sum(d$num_divergent),
-         ", tree-depth hits ", sum(d$num_max_treedepth), ".")
-  data.frame(fits = nrow(d), max_rhat = max(d$max_rhat),
+         ", min tail ESS ", signif(min(d$min_ess_tail), 5),
+         ", tree-depth hits ", sum(d$num_max_treedepth),
+         ", min E-BFMI ", signif(min(d$min_ebfmi), 3), ".")
+
+  ## A reported result must rest on a pristine fit.
+  is_primary <- d$fit_class %in% PRIMARY_CLASSES
+  prim_div <- d[is_primary & d$num_divergent > g$max_divergent, ]
+  if (nrow(prim_div))
+    stop(nrow(prim_div), " PRIMARY fits retained divergent transitions: ",
+         paste(sprintf("%s (%d)", prim_div$fit_id, prim_div$num_divergent), collapse = ", "),
+         ". No tolerance applies to a fit whose result is reported.")
+
+  ## A sensitivity refit may retain divergences only under the declared policy.
+  sens <- d[!is_primary, ]
+  sens_div <- sens[sens$num_divergent > 0, ]
+  cap <- max(1, floor(g$sensitivity_divergence_tolerance_fraction * nrow(sens)))
+
+  if (nrow(sens_div) > cap)
+    stop(nrow(sens_div), " sensitivity refits retained divergent transitions, above the declared cap of ",
+         cap, " (", 100 * g$sensitivity_divergence_tolerance_fraction, " per cent of ",
+         nrow(sens), " sensitivity fits): ",
+         paste(utils::head(sens_div$fit_id, 5), collapse = ", "), ".")
+  if (any(sens_div$num_divergent > g$sensitivity_max_divergent_per_fit))
+    stop("A sensitivity refit exceeded the per-fit divergence limit of ",
+         g$sensitivity_max_divergent_per_fit, ": ",
+         paste(sprintf("%s (%d)", sens_div$fit_id, sens_div$num_divergent)[
+           sens_div$num_divergent > g$sensitivity_max_divergent_per_fit], collapse = ", "), ".")
+  ## Tolerated only after the sampler has already been pushed as far as the
+  ## configured ladder goes.
+  max_steps <- length(unlist(cfg$sampling$adapt_delta_ladder)) - 1L
+  lazy <- sens_div[sens_div$escalations < max_steps, ]
+  if (nrow(lazy))
+    stop(nrow(lazy), " sensitivity refits retained divergences without exhausting the adapt_delta ladder: ",
+         paste(sprintf("%s (%d of %d escalations)", lazy$fit_id, lazy$escalations, max_steps),
+               collapse = ", "), ".")
+
+  d$passes <- diagnostics_pass(d, cfg)
+  attr_out <- data.frame(fits = nrow(d), max_rhat = max(d$max_rhat),
              min_ess_bulk = min(d$min_ess_bulk), min_ess_tail = min(d$min_ess_tail),
              divergences = sum(d$num_divergent),
              treedepth_hits = sum(d$num_max_treedepth),
              min_ebfmi = min(d$min_ebfmi),
              models_escalated = sum(d$escalations > 0),
-             escalation_steps = sum(d$escalations), ok = TRUE)
+             escalation_steps = sum(d$escalations),
+             primary_fits = sum(is_primary),
+             sensitivity_fits = nrow(sens),
+             sensitivity_divergence_cap = cap,
+             sensitivity_fits_with_divergence = nrow(sens_div),
+             tolerated = if (nrow(sens_div))
+               paste(sprintf("%s (%d)", sens_div$fit_id, sens_div$num_divergent),
+                     collapse = "; ") else "",
+             ok = TRUE)
+  attr_out
 }
 
 #' The expected reportable set is stated explicitly, so a missing contrast fails
@@ -298,7 +348,7 @@ gate_expected_reportable <- function(cfg, lock, tables) {
 ## ---- promotion --------------------------------------------------------------
 
 promote_run <- function(cfg, analysis_id, data_sha, lock, results, tables,
-                        cross_layer, ledger, sbc, freq, root = ".") {
+                        cross_layer, ledger, sbc, freq, gate_diag = NULL, root = ".") {
   staging <- file.path(root, "bayesian", "results", "_staging")
   final   <- file.path(root, "bayesian", "results", paste0("run_", analysis_id))
   unlink(staging, recursive = TRUE)
@@ -334,6 +384,9 @@ promote_run <- function(cfg, analysis_id, data_sha, lock, results, tables,
   w(tables$ppc_study,       "diagnostics", "ppc_study.csv")
   w(tables$ppc_coordinate,  "diagnostics", "ppc_coordinate.csv")
   w(results$timings,        "diagnostics", "fit_timings.csv")
+  ## The divergence policy and any fit tolerated under it, so a reader can see
+  ## exactly what was allowed and on what basis rather than inferring it.
+  w(gate_diag,              "diagnostics", "divergence_policy.csv")
 
   make_figures(cfg, tables, file.path(staging, "figures"))
 

@@ -117,7 +117,7 @@ list(
   tar_target(release, {
     gate_fits; gate_diagnostics; gate_expected_rows
     promote_run(cfg, analysis_id, data_sha, lock, results, tables, cross_layer,
-                fit_ledger, sbc_report, frequentist_targets)
+                fit_ledger, sbc_report, frequentist_targets, gate_diagnostics)
   }, format = "file"),
 
   # ---- documents ------------------------------------------------------------
