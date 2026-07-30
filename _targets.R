@@ -21,19 +21,28 @@ suppressPackageStartupMessages({
 
 LIBS <- c("lib_provenance", "lib_config", "lib_data", "lib_summaries", "lib_stan",
           "lib_brms", "lib_ppc", "lib_sbc", "lib_fitplan", "lib_frequentist",
-          "lib_report", "lib_figures", "01_data_lock")
+          "lib_report", "lib_figures", "lib_writeup", "lib_writeup_methods",
+          "12_documents", "01_data_lock")
 for (f in LIBS) source(file.path("bayesian", "R", paste0(f, ".R")))
 
 tar_option_set(
   packages = c("digest", "yaml", "readxl", "metafor", "metaSEM", "cmdstanr",
                "posterior", "brms", "ggplot2"),
   format = "rds",
-  storage = "worker", retrieval = "worker",
-  ## Three workers, four chains each, on twelve physical cores:
-  ##   concurrent fits x chains per fit <= available physical cores.
-  ## crew is optional; without it the identical graph runs sequentially.
-  controller = if (requireNamespace("crew", quietly = TRUE))
-    crew::crew_controller_local(workers = 3, seconds_idle = 60) else NULL
+  ## Storage and retrieval stay in the main process. Worker-side storage
+  ## deadlocked here: branches were declared but never dispatched.
+  ## Sequential execution. Each fit already runs its four chains in parallel.
+  ##
+  ## crew is deliberately NOT wired in. On this platform the controller
+  ## dispatches a standalone task in about four seconds but deadlocks inside
+  ## targets: branches are declared and never dispatched, with every worker
+  ## idle, under both worker-side and main-process storage. Rather than ship a
+  ## parallel path that hangs, the same graph runs sequentially, which is the
+  ## fallback the release plan allows. To re-enable it once the interaction is
+  ## understood, set:
+  ##   controller = crew::crew_controller_local(workers = 3, seconds_idle = 60)
+  ## observing concurrent fits x chains per fit <= available physical cores.
+  controller = NULL
 )
 
 list(
@@ -109,5 +118,12 @@ list(
     gate_fits; gate_diagnostics; gate_expected_rows
     promote_run(cfg, analysis_id, data_sha, lock, results, tables, cross_layer,
                 fit_ledger, sbc_report, frequentist_targets)
-  }, format = "file")
+  }, format = "file"),
+
+  # ---- documents ------------------------------------------------------------
+  # Written from the promoted tables, then checked: no printed figure may be
+  # absent from a source table, and house style is enforced. Hand-copied
+  # numbers disagreed with their tables in the previous version of this
+  # analysis; generating them removes the opportunity and this confirms it.
+  tar_target(documents, build_documents(cfg, lock, dirname(release)), format = "file")
 )

@@ -153,8 +153,12 @@ build_data_lock <- function(cfg, root = ".") {
 }
 
 #' Write the canonical analysis table and the provenance registries, and return
-#' the table's SHA-256. Downstream targets depend on that hash, so a change in
-#' the data invalidates every fit rather than silently mixing generations.
+#' the PATH to the table.
+#'
+#' The path, not the hash: this is a `format = "file"` target, so targets tracks
+#' the file itself. The hash is taken from it downstream, and every fit depends
+#' on that hash, so a change in the data invalidates the whole run rather than
+#' silently mixing generations.
 write_data_lock <- function(lock, root = ".") {
   tab <- do.call(rbind, lock$analysis); rownames(tab) <- NULL
   cols <- c("pathway", "sample_id", "effect_id", "label", "studyID", "year", "n",
@@ -185,5 +189,5 @@ write_data_lock <- function(lock, root = ".") {
                                     effect_id = character(0))
   write.csv(ic, file.path(prov, "instrument_choices.csv"), row.names = FALSE, na = "")
 
-  sha256_file(path)
+  path
 }

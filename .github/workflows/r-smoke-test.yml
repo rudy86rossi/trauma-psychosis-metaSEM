@@ -48,7 +48,7 @@ jobs:
             source("bayesian/R/lib_provenance.R"); source("bayesian/R/lib_config.R")
             source("bayesian/R/lib_data.R"); source("bayesian/R/01_data_lock.R")
             cfg <- load_config(); lock <- build_data_lock(cfg)
-            sha <- write_data_lock(lock); cat("analysis table:", sha, "\n")'
+            p <- write_data_lock(lock); cat("analysis table:", p, sha256_file(p), "\n")'
 
       - name: Stan model compiles
         run: Rscript -e 'cmdstanr::cmdstan_model("bayesian/stan/masem_valid.stan")'
