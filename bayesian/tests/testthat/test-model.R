@@ -192,3 +192,53 @@ test_that("SBC ranks stay inside their support and ties are broken at random", {
   expect_gt(length(unique(replicate(50, sbc_rank(0, tied)))), 1)
   expect_true(is.na(sbc_rank(NA_real_, draws)))
 })
+
+test_that("the moderator vector is masked identically to the data", {
+  # negsch_cps has seven studies but only six report mean age. Passing the
+  # unmasked moderator gives Stan seven values for six rows, which it rejects at
+  # data initialisation with every chain failing at once and an error naming no
+  # fit. Only a model with an incomplete moderator exposes this.
+  for (key in PATH_NAMES(CFG)) {
+    for (m in MOD_NAMES(CFG)) {
+      sd_ <- make_stan_data(CFG, LOCK$analysis[[key]], LOCK$vz_chol[[key]],
+                            m, LOCK$mods[[key]])
+      expect_equal(length(sd_$x), sd_$K, info = paste(key, m))
+      expect_equal(nrow(sd_$z), sd_$K, info = paste(key, m))
+      expect_equal(dim(sd_$L_V)[1], sd_$K, info = paste(key, m))
+      expect_true(all(is.finite(sd_$x)), info = paste(key, m))
+    }
+    sd0 <- make_stan_data(CFG, LOCK$analysis[[key]], LOCK$vz_chol[[key]])
+    expect_equal(length(sd0$x), sd0$K, info = key)
+    expect_equal(sd0$P, 0L)
+  }
+
+  # And the guard fires when the moderator structure describes a different set
+  # of studies than the data. The sensitivity classes rebuild that structure for
+  # a subset, so a mismatched pair is a real possibility rather than a
+  # hypothetical one.
+  expect_error(
+    make_stan_data(CFG, LOCK$analysis$negsch_cps[1:3, ], LOCK$vz_chol$negsch_cps[1:3],
+                   "age", LOCK$mods$negsch_cps),
+    "must be rebuilt for this subset")
+
+  # Rebuilding it for that subset is what the sensitivity path actually does,
+  # and it must then succeed.
+  sub <- LOCK$analysis$negsch_cps[1:3, ]
+  ok <- make_stan_data(CFG, sub, LOCK$vz_chol$negsch_cps[1:3], "age",
+                       rebuild_mods(CFG, sub))
+  expect_equal(length(ok$x), ok$K)
+})
+
+test_that("negsch_cps age, the only incomplete moderator, has six studies of seven", {
+  # Guards the premise of the test above: if the data change so that every
+  # moderator is complete, the masking test stops exercising anything and this
+  # failure says so rather than leaving it silently vacuous.
+  n_incomplete <- 0
+  for (key in PATH_NAMES(CFG))
+    for (m in MOD_NAMES(CFG))
+      if (sum(LOCK$mods[[key]][[m]]$keep) < nrow(LOCK$analysis[[key]]))
+        n_incomplete <- n_incomplete + 1
+  expect_gt(n_incomplete, 0)
+  expect_equal(sum(LOCK$mods$negsch_cps$age$keep), 6L)
+  expect_equal(nrow(LOCK$analysis$negsch_cps), 7L)
+})

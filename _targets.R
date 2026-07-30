@@ -83,7 +83,7 @@ list(
   tar_target(
     fit_results,
     lapply(seq_len(nrow(fit_plan_groups)),
-           function(i) run_fit(cfg, lock, fit_plan_groups[i, ])),
+           function(i) safe_run_fit(cfg, lock, fit_plan_groups[i, ])),
     pattern = map(fit_plan_groups),
     iteration = "list"
   ),

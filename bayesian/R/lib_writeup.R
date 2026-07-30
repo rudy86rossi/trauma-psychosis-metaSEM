@@ -290,16 +290,24 @@ write_results_doc <- function(R, cfg, lock, path) {
   if (!is.null(R$sbc)) {
     a <- R$sbc_audit
     fail <- R$sbc[R$sbc$p_value < 0.05, ]
+    ## How many rank-uniformity tests would fall below 0.05 by chance alone is a
+    ## binomial question, not a matter of comparing with the mean. With 66 tests
+    ## the expectation is 3.3 but the 95th percentile is 6, so quoting the
+    ## expectation alone would overstate a routine excess.
+    n_tests <- nrow(R$sbc)
+    chance_upper <- stats::qbinom(0.95, n_tests, 0.05)
     add("", sprintf(paste("**Simulation-based calibration.** Rank-based SBC over %d prespecified",
-                          "scenarios. Of %d attempted fits, %d failed and %d breached a diagnostic",
-                          "threshold; all remain in the denominator. Of %d scalar parameters, %d",
-                          "had a rank-uniformity p value below 0.05, which is %s at that",
-                          "threshold."),
+                          "scenarios. Of %d attempted fits, %d failed outright and %d breached a",
+                          "diagnostic threshold; all remain in the denominator, since removing them",
+                          "would flatter the audit. Of %d scalar parameters, %d had a",
+                          "rank-uniformity p value below 0.05. Under exact uniformity the",
+                          "expectation is %s and the 95th percentile is %d, so this is %s."),
                     length(unique(R$sbc$scenario)), a$total_fits, a$fits_failed,
-                    a$fits_diag_failed, nrow(R$sbc), nrow(fail),
-                    if (nrow(fail) <= ceiling(0.05 * nrow(R$sbc)))
-                      "within what chance alone would produce" else
-                      "more than chance alone would produce"), "")
+                    a$fits_diag_failed, n_tests, nrow(fail),
+                    fmt(0.05 * n_tests, 1), chance_upper,
+                    if (nrow(fail) <= chance_upper)
+                      "within the range chance alone produces" else
+                      "beyond what chance alone would readily produce and merits inspection"), "")
     add(paste("This is a **screening-level** calibration check, not high-powered proof of",
               "calibration, and it is conditional on the plug-in sampling covariance matrices: it",
               "validates the implemented likelihood and sampler given those matrices, not the",

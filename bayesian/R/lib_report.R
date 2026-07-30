@@ -47,8 +47,9 @@ collate_results <- function(fit_results) {
     ppc_overall    = if (length(ppc)) bind_ppc("overall") else NULL,
     timings = data.frame(fit_id = vapply(flat, function(x) x$fit_id, character(1)),
                          fit_class = vapply(flat, function(x) x$fit_class, character(1)),
-                         seconds = vapply(flat, function(x) x$seconds, numeric(1)),
+                         seconds = vapply(flat, function(x) x$seconds %||% NA_real_, numeric(1)),
                          status = vapply(flat, function(x) x$status, character(1)),
+                         error = vapply(flat, function(x) x$error %||% NA_character_, character(1)),
                          stringsAsFactors = FALSE),
     draws_d_z = setNames(lapply(flat, function(x) x$draws_d_z),
                          vapply(flat, function(x) x$fit_id, character(1)))
@@ -58,7 +59,7 @@ collate_results <- function(fit_results) {
 build_fit_ledger <- function(plan, results, analysis_id, data_sha, cfg) {
   src <- tryCatch(system2("git", c("rev-parse", "HEAD"), stdout = TRUE),
                   error = function(e) NA_character_)
-  d <- merge(plan, results$timings[, c("fit_id", "seconds", "status")],
+  d <- merge(plan, results$timings[, c("fit_id", "seconds", "status", "error")],
              by = "fit_id", all.x = TRUE)
   dg <- results$diagnostics
   if (!is.null(dg) && "fit_id" %in% names(dg))
@@ -227,12 +228,19 @@ gate_fit_completeness <- function(plan, ledger) {
   completed <- sort(ledger$fit_id[ledger$status == "ok"])
   missing <- setdiff(expected, completed)
   extra   <- setdiff(completed, expected)
-  if (length(missing) || length(extra))
+  if (length(missing) || length(extra)) {
+    ## Name the failures and quote their errors, so one run identifies the
+    ## culprit rather than requiring the whole analysis to be repeated blind.
+    failed <- ledger[ledger$fit_id %in% missing & !is.na(ledger$error), ]
+    detail <- if (nrow(failed))
+      paste0("\n  ", failed$fit_id, ": ", substr(failed$error, 1, 160), collapse = "")
+    else ""
     stop("Fit set mismatch. Missing ", length(missing), ": ",
          paste(utils::head(missing, 5), collapse = ", "),
          if (length(missing) > 5) " ..." else "",
          ". Unexpected ", length(extra), ": ",
-         paste(utils::head(extra, 5), collapse = ", "), ".")
+         paste(utils::head(extra, 5), collapse = ", "), ".", detail)
+  }
   if (anyDuplicated(completed))
     stop("Duplicate fit_id in the completed set.")
   data.frame(expected = length(expected), completed = length(completed), ok = TRUE)

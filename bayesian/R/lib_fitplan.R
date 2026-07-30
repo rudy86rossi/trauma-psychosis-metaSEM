@@ -151,6 +151,27 @@ rebuild_mods <- function(cfg, d) {
 
 ## ---- the dispatcher ---------------------------------------------------------
 
+#' Execute one row of the fit plan, recording a failure rather than aborting the
+#' whole branch.
+#'
+#' A failed fit must still be fatal to the RELEASE, and it is: the completeness
+#' gate compares the expected fit_id set against the completed one and stops if
+#' any is missing. What this adds is identity. When a Stan fit produces no
+#' usable chains, cmdstanr raises from inside the diagnostic call and the
+#' exception says nothing about which of several hundred specifications died,
+#' so the run has to be repeated blind to find out. Recording the fit_id and the
+#' message means one run identifies the culprit.
+safe_run_fit <- function(cfg, lock, row) {
+  tryCatch(run_fit(cfg, lock, row), error = function(e) {
+    msg <- gsub("[\r\n]+", " ", conditionMessage(e))
+    message("FIT FAILED: ", row$fit_id, " : ", msg)
+    list(fit_id = row$fit_id, fit_class = row$fit_class, status = "error",
+         error = msg, diagnostics = NULL, slopes = NULL, pooled = NULL,
+         predict = NULL, contrasts = NULL, ppc = NULL, draws_d_z = NULL,
+         seconds = NA_real_)
+  })
+}
+
 #' Execute one row of the fit plan and return compact results.
 run_fit <- function(cfg, lock, row) {
   key   <- row$pathway

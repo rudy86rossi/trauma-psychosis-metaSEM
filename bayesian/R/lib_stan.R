@@ -77,13 +77,28 @@ make_stan_data <- function(cfg, df, vz_chol, mod = NULL, mods = NULL,
     beta_unit_sd <- priors$beta_full_sd
   } else {
     mi <- mods[[mod]]
-    keep <- mi$keep; x <- mi$x; xc <- mi$xc; P <- 1L
+    ## The moderator structure must describe THIS data frame. The sensitivity
+    ## classes rebuild it for a subset (a deleted study, a substituted
+    ## instrument), so a mismatched pair is a real possibility and would
+    ## otherwise surface as an opaque Stan initialisation failure.
+    if (length(mi$keep) != nrow(df))
+      stop("Moderator '", mod, "' describes ", length(mi$keep), " studies but the data have ",
+           nrow(df), ". The moderator structure must be rebuilt for this subset.")
+
+    ## mi$x holds one value per study in the pathway. The model is fitted on the
+    ## studies that HAVE the moderator, so x is masked exactly as the data are.
+    ## Omitting this passes more moderator values than there are rows, which
+    ## Stan rejects at data initialisation with every chain failing at once and
+    ## an error naming no fit. Only an incomplete moderator exposes it.
+    keep <- mi$keep; x <- mi$x[keep]; xc <- mi$xc; P <- 1L
     beta_unit_sd <- prior_unit_sd_for(cfg, mod, priors$beta_full_sd)
   }
 
   d  <- df[keep, , drop = FALSE]
   Lv <- vz_chol[keep]
   sid <- as.integer(factor(d$sample_id, levels = unique(d$sample_id)))
+
+  stopifnot(length(x) == nrow(d), length(Lv) == nrow(d))
 
   z <- cbind(atanh(d$r_XM), atanh(d$r_XY), atanh(d$r_MY))
   if (any(!is.finite(z)))
