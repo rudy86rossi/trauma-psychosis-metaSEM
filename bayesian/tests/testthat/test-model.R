@@ -242,3 +242,19 @@ test_that("negsch_cps age, the only incomplete moderator, has six studies of sev
   expect_equal(sum(LOCK$mods$negsch_cps$age$keep), 6L)
   expect_equal(nrow(LOCK$analysis$negsch_cps), 7L)
 })
+
+test_that("summaries and PPCs use the fitted subset, not the whole pathway", {
+  # negsch_cps age fits six of seven studies. Passing the full pathway frame to
+  # the extraction and posterior predictive code indexes replicated quantities
+  # past the end of the draws, and reports k as seven when six were used.
+  for (key in PATH_NAMES(CFG)) {
+    for (m in MOD_NAMES(CFG)) {
+      keep <- LOCK$mods[[key]][[m]]$keep
+      df_fit <- LOCK$analysis[[key]][keep, , drop = FALSE]
+      sd_ <- make_stan_data(CFG, LOCK$analysis[[key]], LOCK$vz_chol[[key]],
+                            m, LOCK$mods[[key]])
+      expect_equal(nrow(df_fit), sd_$K, info = paste(key, m))
+      expect_equal(length(unique(df_fit$sample_id)), sd_$S, info = paste(key, m))
+    }
+  }
+})

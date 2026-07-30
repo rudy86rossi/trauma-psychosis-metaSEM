@@ -203,9 +203,17 @@ run_fit <- function(cfg, lock, row) {
 
   spec <- if (is.null(mod)) NULL else mods[[mod]]$spec
 
+  ## The studies the model is actually fitted on. A moderator with a missing
+  ## value drops its study, so the pathway data frame is not the fitted set.
+  ## Summaries and posterior predictive checks must use the fitted set: indexing
+  ## replicated quantities by the full frame reads past the end of the draws,
+  ## and the reported number of samples would otherwise overstate k.
+  keep_fit <- if (is.null(mod)) rep(TRUE, nrow(df)) else mods[[mod]]$keep
+  df_fit   <- df[keep_fit, , drop = FALSE]
+
   ## --- brms branches
   if (identical(row$layer, "brms")) {
-    bl  <- build_long(cfg, df, vz, mod, mods)
+    bl  <- build_long(cfg, df, vz, mod, mods)      # applies the same mask
     fit <- fit_brms_model(cfg, bl, mod, row$fit_id, priors)
     dg  <- cbind(data.frame(pathway = key, moderator = row$moderator,
                             fit_class = row$fit_class, variant = row$variant,
@@ -243,7 +251,7 @@ run_fit <- function(cfg, lock, row) {
 
   ex <- extract_stan(cfg, fit, key, mod,
                      spec %||% scale_spec(cfg, MOD_NAMES(cfg)[1]),
-                     df, mods, row$reportable)
+                     df_fit, mods, row$reportable)
   for (nm in c("slopes", "pooled", "predict", "contrasts")) {
     if (!is.null(ex[[nm]]))
       ex[[nm]] <- cbind(data.frame(fit_id = row$fit_id, fit_class = row$fit_class,
@@ -257,7 +265,7 @@ run_fit <- function(cfg, lock, row) {
   ## Posterior predictive checks and matched draws, for the primary fits only.
   ppc <- NULL; draws <- NULL
   if (identical(row$fit_class, "stan_primary")) {
-    ppc <- ppc_summaries(cfg, fit, key, mod, df)
+    ppc <- ppc_summaries(cfg, fit, key, mod, df_fit)
     if (!is.null(mod)) draws <- stan_d_z(fit)
   }
 
