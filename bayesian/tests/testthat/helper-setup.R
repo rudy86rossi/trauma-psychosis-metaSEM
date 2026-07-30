@@ -11,10 +11,10 @@ repo_root <- function() {
 
 ROOT <- repo_root()
 suppressPackageStartupMessages(library(digest))
-for (f in c("lib_provenance", "lib_config", "lib_data", "lib_scales_check",
-            "01_data_lock"))
-  if (file.exists(file.path(ROOT, "bayesian", "R", paste0(f, ".R"))))
-    source(file.path(ROOT, "bayesian", "R", paste0(f, ".R")))
+LIBS <- c("lib_provenance", "lib_config", "lib_data", "lib_summaries", "lib_stan",
+          "lib_brms", "lib_ppc", "lib_sbc", "lib_fitplan", "lib_frequentist",
+          "lib_report", "lib_figures", "01_data_lock")
+for (f in LIBS) source(file.path(ROOT, "bayesian", "R", paste0(f, ".R")))
 
 CFG <- load_config(file.path(ROOT, "config", "analysis.yml"))
 
