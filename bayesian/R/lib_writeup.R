@@ -264,11 +264,14 @@ write_results_doc <- function(R, cfg, lock, path) {
   # --- 7. model checking
   add("## 7. Model checking", "")
   dg <- R$diagnostics
-  add(sprintf(paste("**Sampling.** All %d fits met every diagnostic target: maximum R-hat %s,",
-                    "minimum bulk effective sample size %s, minimum tail effective sample size %s,",
-                    "%d divergent transitions, %d maximum-tree-depth events, minimum E-BFMI %s."),
+  ndiv <- sum(dg$num_divergent)
+  add(sprintf(paste("**Sampling.** Across all %d fits: maximum R-hat %s, minimum bulk effective",
+                    "sample size %s, minimum tail effective sample size %s, %s, %d",
+                    "maximum-tree-depth events, minimum E-BFMI %s. Every fit met the convergence",
+                    "targets; the divergence position is set out below."),
               nrow(dg), fmt(max(dg$max_rhat), 4), formatC(min(dg$min_ess_bulk), format = "d"),
-              formatC(min(dg$min_ess_tail), format = "d"), sum(dg$num_divergent),
+              formatC(min(dg$min_ess_tail), format = "d"),
+              if (ndiv == 1) "1 divergent transition" else sprintf("%d divergent transitions", ndiv),
               sum(dg$num_max_treedepth), fmt(min(dg$min_ebfmi), 2)), "")
   esc <- dg[dg$escalations > 0, ]
   add(sprintf(paste("%d of %d fits required an adapt_delta escalation, involving %d escalation",
@@ -286,9 +289,9 @@ write_results_doc <- function(R, cfg, lock, path) {
       add(sprintf(paste("%d of the %d sensitivity refits retained a divergence after exhausting the",
                         "adapt_delta ladder, against a declared cap of %d, namely %s. Deleting a",
                         "study from an already small pathway can produce a geometry the sampler",
-                        "finds harder than the model being reported. These are named here rather",
-                        "than absorbed into a summary, and the affected refits contribute to the",
-                        "leave-one-study-out counts above."),
+                        "finds harder than the model being reported. They are named here rather",
+                        "than absorbed into a summary, so a reader can check whether any of them",
+                        "underlies a reported robustness count."),
                   dv$sensitivity_fits_with_divergence, dv$sensitivity_fits,
                   dv$sensitivity_divergence_cap, dv$tolerated), "")
     } else {

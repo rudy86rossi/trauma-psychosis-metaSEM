@@ -52,9 +52,18 @@ check_documents <- function(paths, R, cfg, tol = 5e-4) {
       problems <- c(problems, sprintf("%s: US spelling(s) %s", nm, paste(hits, collapse = ", ")))
 
     ## Every printed number to three decimals must exist in some table.
+    ##
+    ## Citations are excluded: an identifier is not a result. arXiv:1804.06788,
+    ## a DOI and a volume-page range all contain digit groups that look like
+    ## decimals, and treating them as unsourced values would make the check cry
+    ## wolf until it was ignored.
     body <- txt[!grepl("^\\s*(#|```|\\||\\s*$)", txt)]
+    stop_at <- grep("^#+\\s*References", txt)
+    if (length(stop_at)) body <- txt[seq_len(stop_at[1] - 1)]
+    body <- body[!grepl("^\\s*(#|```|\\||\\s*$)", body)]
+    body <- body[!grepl("arXiv|doi:|https?://|10\\.[0-9]{4}", body, ignore.case = TRUE)]
     nums <- unique(as.numeric(unlist(regmatches(
-      body, gregexpr("-?[0-9]+\\.[0-9]{3}", body)))))
+      body, gregexpr("-?[0-9]+\\.[0-9]{3}(?![0-9])", body, perl = TRUE)))))
     nums <- nums[is.finite(nums)]
     orphan <- nums[!vapply(nums, function(v) any(abs(pool - v) < tol), logical(1))]
     if (length(orphan))
