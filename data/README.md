@@ -25,7 +25,8 @@ to author and data-governance approval.
 | `inputs/analysis_table.csv` | The locked analysis table, canonically serialised. Everything downstream reads this, never a workbook. |
 | `provenance/corrections.csv` | One row per corrected cell. Twelve rows. |
 | `provenance/quality_scores.csv` | The complete Newcastle-Ottawa record for the negative-schema workbook. Twenty rows. |
-| `provenance/samples.csv` | One row per independent participant sample. |
+| `provenance/samples.csv` | **Source table, read by the pipeline.** One row per independent participant sample, with its verification status. |
+| `provenance/sample_review_queue.csv` | Generated. Cases the derivation cannot settle, for a human with the papers. |
 | `provenance/effects.csv` | One row per pathway, instrument and effect estimate, linked by `sample_id`. |
 | `provenance/exclusions.csv` | Studies excluded by explicit decision, with the reason and status. |
 | `provenance/instrument_choices.csv` | Samples that supplied more than one eligible instrument, and which was chosen. |
@@ -33,6 +34,40 @@ to author and data-governance approval.
 | `provenance/contrast_support.csv` | Nominal and supported contrasts, spans, priors and SESOIs. |
 | `provenance/vz_comparison.csv` | Differences between the three sampling-covariance constructions. |
 | `provenance/literature_manifest.csv` | Citations and DOIs in place of journal PDFs. |
+
+## The analytical unit
+
+The analytical unit is one independent participant sample, not one paper and not
+one row. `samples.csv` is the registry that records it, and the pipeline **reads**
+it: it owns the identifiers, so they stay stable when a workbook is revised, and
+a `fit_id` such as `loso_stan|negsch_del|clinical|S026` keeps meaning the same
+study across runs.
+
+Sample identity is still **derived**, from `paste(studyID, year)`. That is a
+heuristic. It cannot separate two cohorts published by one author in one year,
+and it cannot recognise one cohort appearing under two labels. The registry does
+not pretend otherwise. It does two things instead.
+
+**Structural contradictions stop the build.** These are cases where the data
+disagree with themselves and no judgement can rescue them:
+
+- an effect row that maps to no declared `sample_id`;
+- one `sample_id` carrying two different participant counts, which means it is
+  either two samples or a transcription error;
+- two primary rows in one pathway sharing an author-year key;
+- a Newcastle-Ottawa value that is not an integer in range, or has no authority;
+- a duplicated correction;
+- a row marked `verified` with no `verified_by` and `verified_date`.
+
+**Judgement calls are surfaced, not silently resolved.** `sample_review_queue.csv`
+is regenerated every run and names each case an author needs to settle: keys
+spanning two source workbooks, labels whose punctuation will not round-trip, and
+same-author pairs in adjacent years.
+
+Every row is currently `derived_unverified`. Until an author signs them off,
+nothing in this release may describe the analytical unit as verified, and
+`check_documents()` enforces that: the stronger wording fails the build while any
+row remains unverified.
 
 ## What the corrections are
 
