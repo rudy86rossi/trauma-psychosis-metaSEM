@@ -4,7 +4,7 @@
 # data/provenance/quality_scores.csv by comparing the corrected workbooks with
 # the upstream workbooks committed under metaSEM/.
 #
-#   Rscript --vanilla bayesian/tools/derive_provenance.R /path/to/corrected/dir
+#   Rscript bayesian/tools/derive_provenance.R /path/to/corrected/dir
 #
 # It requires the corrected workbooks, which are NOT part of this repository.
 # The release pipeline never runs this: it consumes the committed CSVs. Rerun it

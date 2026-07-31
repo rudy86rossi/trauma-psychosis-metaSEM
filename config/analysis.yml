@@ -193,6 +193,42 @@ diagnostics:
   sensitivity_divergence_tolerance_fraction: 0.01
   sensitivity_max_divergent_per_fit: 10
 
+# --- prior predictive check ---------------------------------------------------
+# PRESPECIFIED. These thresholds are committed before the run that tests them,
+# and the hash of this file forms part of the analysis_id, so the commit that
+# pins them provably predates the fits. That ordering is the whole point: a
+# plausibility criterion chosen after seeing the prior predictive distribution
+# is unfalsifiable, because any prior passes once the target is drawn around the
+# answer. A failure here is reported as a failure, not renegotiated.
+#
+# The requirement is COVERAGE, not agreement. The priors must not exclude values
+# the external literature reports, and must not place most of their mass on
+# correlations no one has observed. They are weakly informative and are not
+# claimed to encode the literature: see bayesian/docs/prior_scope.md.
+#
+# Anchors are the published zero-order correlations tabulated in prior_scope.md,
+# on the Fisher-z scale. They are plausibility anchors only, never data.
+prior_predictive:
+  anchors_z: [0.174, 0.202, 0.445, 0.468, 0.499]
+  # Every anchor must fall inside the central interval of the implied prior for
+  # the corresponding zero-order correlation. A prior that rules out an observed
+  # published value is too tight to be called weakly informative.
+  anchor_interval_prob: 0.95
+  # The implied prior on each zero-order correlation must keep most of its mass
+  # in a range that is possible and not absurd. Correlations beyond |r| = 0.95
+  # between these constructs are not observed in this literature.
+  max_abs_r: 0.95
+  min_mass_within_max_abs_r: 0.95
+  # The implied prior on the indirect effect must be centred near zero (it must
+  # not presuppose mediation) while still admitting effects large enough to
+  # matter. Both directions must remain credible a priori.
+  indirect_median_abs_max: 0.05
+  indirect_min_p_positive: 0.30
+  indirect_max_p_positive: 0.70
+  # And it must actually reach the magnitudes the literature reports, or the
+  # prior would preclude the finding before any data were seen.
+  indirect_min_upper_q: 0.10
+
 # --- simulation-based calibration --------------------------------------------
 # Screening level. Six prespecified scenarios exercising the intercept-only code
 # path, continuous and binary moderation, the smallest and largest k,

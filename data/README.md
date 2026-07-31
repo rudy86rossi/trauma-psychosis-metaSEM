@@ -79,7 +79,7 @@ the corrected workbooks, which are not in this repository. The release pipeline
 never runs it.
 
 ```sh
-Rscript --vanilla bayesian/tools/derive_provenance.R /path/to/corrected/workbooks
+Rscript bayesian/tools/derive_provenance.R /path/to/corrected/workbooks
 ```
 
 Rerun it only when the authors supply a revised workbook, then review the diff

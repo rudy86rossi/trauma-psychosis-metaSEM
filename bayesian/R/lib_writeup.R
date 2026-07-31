@@ -105,13 +105,20 @@ write_results_doc <- function(R, cfg, lock, path) {
               "distinguish a moderating effect large enough to matter from no such effect, which",
               "is a statement about this evidence base and not about the world."), "")
   } else {
-    add(sprintf(paste("In the Bayesian analysis, %d of the %d reportable coordinate slopes met the",
-                      "interval decision rule: %d in the primary valid-correlation model and %d in",
-                      "the brms reference model. A further %d slopes were prespecified as not",
-                      "reportable."),
-                h$bayes_decisions, h$bayes_slopes_reportable,
-                h$bayes_decisions_stan, h$bayes_decisions_brms,
-                h$bayes_slopes_not_reportable), "")
+    ## Counted PER LAYER, not pooled. The two layers estimate the SAME set of
+    ## estimands, so "n of 138 slopes" invites a reader to treat them as
+    ## independent replications and halves the apparent rate. The honest
+    ## denominator is the number of reportable contrasts in one layer.
+    n_per_layer <- h$bayes_slopes_reportable / 2
+    add(sprintf(paste("In the Bayesian analysis, %d of %g reportable primary coordinate contrasts met",
+                      "the interval-plus-SESOI rule, and %d of the %g corresponding reference",
+                      "contrasts did. The two layers analyse the same estimands and are not",
+                      "independent replications, so they are counted separately rather than pooled",
+                      "into a single denominator. A further %d contrasts per layer were",
+                      "prespecified as not reportable."),
+                h$bayes_decisions_stan, n_per_layer,
+                h$bayes_decisions_brms, n_per_layer,
+                h$bayes_slopes_not_reportable / 2), "")
     add("", "| Pathway | Moderator | Coordinate | Layer | Contrast | Median | 95% HDI | Decision |",
         "| --- | --- | --- | --- | --- | ---: | --- | --- |")
     for (i in seq_len(nrow(dec)))
@@ -131,12 +138,24 @@ write_results_doc <- function(R, cfg, lock, path) {
   # --- 2. what did not change
   add("## 2. Findings that do not depend on the moderator analysis", "")
   pi <- R$pi_summary
-  add(sprintf(paste("**New-study prediction intervals.** Of %d stored prediction intervals for the",
-                    "indirect effect ab, %d include zero. A prediction interval describes the range",
-                    "of effects expected in a new study, not the precision of the pooled mean. Its",
-                    "exact width is prior-informed, because between-study heterogeneity is weakly",
-                    "identified at this number of studies."),
-              pi$n_intervals, pi$n_including_zero), "")
+  ## The 54 stored intervals are not one homogeneous set: 6 come from the
+  ## unmoderated models and 48 are moderator-endpoint predictions, which are
+  ## conditional on a moderator value and therefore emphatically NOT independent
+  ## of the moderator analysis. Reporting them as a single count under a heading
+  ## about findings independent of the moderators was misleading.
+  add(sprintf(paste("**Prediction intervals for the latent true study effect.** All %d intervals for",
+                    "the indirect effect ab in a new study include zero: the %d from the",
+                    "unmoderated models, and the %d moderator-endpoint intervals, which are",
+                    "conditional on a moderator value and so belong to the moderator analysis",
+                    "rather than standing apart from it."),
+              pi$n_including_zero, pi$n_unmoderated, pi$n_endpoint), "")
+  add(paste("These intervals describe the range of LATENT TRUE effects expected across new studies",
+            "drawn from the estimated population. They do not add the sampling error a future",
+            "observed estimate would also carry, so a realised estimate would scatter more widely",
+            "still. Their width is driven entirely by the between-study heterogeneity tau, which is",
+            "weakly identified at this number of studies and therefore substantially",
+            "prior-informed; the tau posteriors are reported in `tables/heterogeneity.csv` so that",
+            "claim can be checked rather than taken on trust."), "")
 
   pm <- R$pooled[R$pooled$moderator == "null" & R$pooled$quantity == "pmed", ]
   fin <- sum(is.finite(pm$q_lo) & is.finite(pm$q_hi))
@@ -158,17 +177,31 @@ write_results_doc <- function(R, cfg, lock, path) {
     pr <- R$predict[R$predict$moderator == "null" & R$predict$pathway == k &
                       R$predict$quantity == "ind", ]
     if (!length(g("a", "median"))) return(NULL)
+    tau <- R$heterogeneity[R$heterogeneity$moderator == "null" &
+                             R$heterogeneity$pathway == k, ]
     data.frame(Pathway = PATHWAY_PROSE[k],
-               k = lock$reportability$k[lock$reportability$pathway == k][1],
+               ## k for THIS fit, from the unmoderated rows. Taking it from
+               ## lock$reportability[...][1] silently returned the first
+               ## moderator's row, which is `age`, so negative schema to
+               ## composite psychosis was published as k = 6 when seven samples
+               ## were fitted: Dhondt 2022 has no recorded age.
+               k = g("a", "k_samples"),
                a = fmt(g("a", "median")), b = fmt(g("b", "median")),
                `c'` = fmt(g("cprime", "median")),
                ab = sprintf("%s %s", fmt(g("ind", "median")),
                             ci(g("ind", "q_lo"), g("ind", "q_hi"))),
                `P(ab>0)` = fmt(g("ind", "p_gt0"), 2),
+               `max tau` = if (nrow(tau)) fmt(max(tau$median)) else "",
                `new-study PI` = ci(pr$q_lo, pr$q_hi),
                check.names = FALSE, stringsAsFactors = FALSE)
   }))
   add(md_table(tab), "")
+  add(paste("`ab` is reported with its equal-tailed 95 per cent credible interval. Equal-tailed and",
+            "highest-density intervals do not always agree on whether zero is excluded, so the",
+            "convention is named rather than left implicit; the HDI is given for every quantity in",
+            "`tables/pooled_quantities.csv`. `max tau` is the largest of the three coordinate",
+            "heterogeneity posterior medians, given here because the prediction intervals are",
+            "driven entirely by tau; the full posteriors are in `tables/heterogeneity.csv`."), "")
 
   # --- 4. moderator results
   add("## 4. Moderator results", "")
@@ -287,13 +320,18 @@ write_results_doc <- function(R, cfg, lock, path) {
                     dv$divergences, dv$fits, dv$primary_fits), "")
     if (nzchar(dv$tolerated)) {
       add(sprintf(paste("%d of the %d sensitivity refits retained a divergence after exhausting the",
-                        "adapt_delta ladder, against a declared cap of %d, namely %s. Deleting a",
-                        "study from an already small pathway can produce a geometry the sampler",
-                        "finds harder than the model being reported. They are named here rather",
-                        "than absorbed into a summary, so a reader can check whether any of them",
-                        "underlies a reported robustness count."),
+                        "adapt_delta ladder, against a cap of %d, namely %s. Deleting a study from",
+                        "an already small pathway can produce a geometry the sampler finds harder",
+                        "than the model being reported. They are named here rather than absorbed",
+                        "into a summary, so a reader can check whether any of them underlies a",
+                        "reported robustness count."),
                   dv$sensitivity_fits_with_divergence, dv$sensitivity_fits,
                   dv$sensitivity_divergence_cap, dv$tolerated), "")
+      add(paste("**The tolerance was adopted after a run exposed the issue, not prespecified for",
+                "this analysis.** It is stated as a rule for subsequent runs, and the cap was fixed",
+                "before the count was inspected, but describing it as prespecified here would be",
+                "false. Every threshold other than this one applied to every fit without",
+                "exception."), "")
     } else {
       add("No sensitivity refit retained a divergent transition either.", "")
     }
@@ -309,6 +347,48 @@ write_results_doc <- function(R, cfg, lock, path) {
                     pct(mean(po$coverage_new_study)), sum(po$n_extreme_ppp)), "")
     add(paste("Both forms are reported because a conditional check alone can look satisfactory",
               "simply because the study-level random effects have absorbed an outlying study."), "")
+    add(paste("These checks detected **no gross conflict between the model and the data**. That is",
+              "not a demonstration of predictive calibration, and the checks should not be",
+              "described as having been passed. Complete in-sample coverage is a weak result: with",
+              "four to ten studies the intervals are wide, so coverage near one is close to",
+              "guaranteed and carries little information. What was examined is the joint",
+              "discrepancy of each study's three coordinates under both replication forms, plus",
+              "coordinate-wise residuals. What these checks would NOT detect includes a misspecified",
+              "between-study distribution shape, dependence between studies sharing participants,",
+              "and any error in the plug-in sampling covariance matrices, which are treated as",
+              "known throughout."), "")
+  }
+
+  if (!is.null(R$prior_predictive_verdict)) {
+    pv <- R$prior_predictive_verdict
+    add("", sprintf(paste("**Prior predictive check.** %d prespecified plausibility criteria across",
+                          "%d pathways, all of which were met. The thresholds are recorded in",
+                          "`config/analysis.yml` and were committed before the run that tested",
+                          "them; the configuration hash forms part of the analysis identifier, so",
+                          "that ordering is verifiable rather than asserted. The criteria require",
+                          "the priors to COVER the published correlations tabulated in",
+                          "`bayesian/docs/prior_scope.md`, not to encode them: the priors remain",
+                          "weakly informative and are not literature-derived."),
+                    nrow(pv), length(unique(pv$pathway))), "")
+  }
+
+  if (!is.null(R$power_scaling) && nrow(R$power_scaling)) {
+    ps <- R$power_scaling
+    flagged <- ps[ps$diagnosis != "-", ]
+    add("", sprintf(paste("**Prior and likelihood power scaling.** Sensitivity was computed for %d",
+                          "parameters across the primary fits. %d were flagged, of which %d were",
+                          "heterogeneity parameters. This asks a different question from the prior",
+                          "grid: the grid refits at other prior widths and asks whether the",
+                          "conclusion moves, whereas power scaling asks which of the prior and the",
+                          "likelihood is driving each posterior."),
+                    nrow(ps), nrow(flagged),
+                    sum(grepl("^tau", flagged$variable))), "")
+    if (nrow(flagged))
+      add(paste("A parameter flagged as prior-dominated is one the data barely inform, so its",
+                "posterior should not be read as an empirical finding. This is expected for tau at",
+                "four to ten studies and is the reason the prediction intervals are described as",
+                "prior-informed. Full results, including any flag on the coordinate carrying a",
+                "reported decision, are in `diagnostics/power_scaling.csv`."), "")
   }
 
   if (!is.null(R$sbc)) {
@@ -320,22 +400,46 @@ write_results_doc <- function(R, cfg, lock, path) {
     ## expectation alone would overstate a routine excess.
     n_tests <- nrow(R$sbc)
     chance_upper <- stats::qbinom(0.95, n_tests, 0.05)
+    n_all_fail <- if ("allranks_p_value" %in% names(R$sbc))
+      sum(R$sbc$allranks_p_value < 0.05, na.rm = TRUE) else NA_integer_
     add("", sprintf(paste("**Simulation-based calibration.** Rank-based SBC over %d prespecified",
                           "scenarios. Of %d attempted fits, %d failed outright and %d breached a",
-                          "diagnostic threshold; all remain in the denominator, since removing them",
-                          "would flatter the audit. Of %d scalar parameters, %d had a",
-                          "rank-uniformity p value below 0.05. Under exact uniformity the",
-                          "expectation is %s and the 95th percentile is %d, so this is %s."),
+                          "diagnostic threshold, leaving %s per scenario in the primary test. A",
+                          "rank from a fit that did not converge is not a draw from the posterior",
+                          "the model defines, so including it would confound sampler failure with",
+                          "miscalibration; every attempted fit is nonetheless retained in this",
+                          "accounting and in the all-ranks sensitivity test below. Of %d scalar",
+                          "parameters, %d had a rank-uniformity p value below 0.05. Under exact",
+                          "uniformity the expectation is %s and the 95th percentile is %d, so this",
+                          "is %s."),
                     length(unique(R$sbc$scenario)), a$total_fits, a$fits_failed,
-                    a$fits_diag_failed, n_tests, nrow(fail),
+                    a$fits_diag_failed,
+                    if (a$n_datasets_min == a$n_datasets_max) as.character(a$n_datasets_min)
+                    else sprintf("%d to %d", a$n_datasets_min, a$n_datasets_max),
+                    n_tests, nrow(fail),
                     fmt(0.05 * n_tests, 1), chance_upper,
                     if (nrow(fail) <= chance_upper)
                       "within the range chance alone produces" else
                       "beyond what chance alone would readily produce and merits inspection"), "")
+    if (!is.na(n_all_fail))
+      add("", sprintf(paste("Repeating the same tests over **all** ranks, including those from the",
+                            "%d diagnostically invalid fits, gives %d p values below 0.05 against",
+                            "%d in the primary test. %s"),
+                      a$fits_diag_failed, n_all_fail, nrow(fail),
+                      if (n_all_fail == nrow(fail))
+                        "The exclusion therefore changes nothing."
+                      else
+                        paste("The two disagree, so the exclusion is itself a finding rather than",
+                              "a matter of bookkeeping.")), "")
     add(paste("This is a **screening-level** calibration check, not high-powered proof of",
               "calibration, and it is conditional on the plug-in sampling covariance matrices: it",
               "validates the implemented likelihood and sampler given those matrices, not the",
-              "uncertainty that arises from estimating them from participant-level data."), "")
+              "uncertainty that arises from estimating them from participant-level data. The p",
+              "values are correlated across parameters and across scenarios, so the binomial",
+              "figure above is a reference point rather than a formal guarantee. Raw truths,",
+              "ranks and per-replicate diagnostics are archived in",
+              "`diagnostics/sbc_ranks_raw.csv`, so every rank can be recomputed without",
+              "refitting."), "")
   }
 
   # --- 8. limitations

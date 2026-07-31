@@ -2,7 +2,7 @@
 # _targets.R
 # The single workflow graph for the Bayesian reanalysis.
 #
-#   Rscript --vanilla -e 'targets::tar_make()'
+#   Rscript -e 'targets::tar_make()'
 #
 # There is deliberately no second, sequential driver. Two orchestration paths
 # diverge, and the one that is not routinely exercised is the one that silently
@@ -20,7 +20,8 @@ suppressPackageStartupMessages({
 })
 
 LIBS <- c("lib_provenance", "lib_config", "lib_data", "lib_summaries", "lib_stan",
-          "lib_brms", "lib_ppc", "lib_sbc", "lib_fitplan", "lib_frequentist",
+          "lib_brms", "lib_ppc", "lib_sbc", "lib_prior_checks", "lib_fitplan",
+          "lib_frequentist",
           "lib_report", "lib_figures", "lib_writeup", "lib_writeup_methods",
           "12_documents", "01_data_lock")
 for (f in LIBS) source(file.path("bayesian", "R", paste0(f, ".R")))
@@ -111,11 +112,15 @@ list(
   tar_target(gate_fits, gate_fit_completeness(fit_plan, fit_ledger)),
   tar_target(gate_diagnostics, gate_diagnostic_thresholds(cfg, results)),
   tar_target(gate_expected_rows, gate_expected_reportable(cfg, lock, tables)),
+  ## Fails the release if any prespecified prior plausibility criterion was
+  ## not met. The thresholds were committed before this run; a failure is
+  ## reported as a failure rather than renegotiated afterwards.
+  tar_target(gate_prior_pred, gate_prior_predictive(results$prior_predictive_verdict)),
 
   # ---- promotion ------------------------------------------------------------
   # Runs only after every gate has returned. The manifest is written last.
   tar_target(release, {
-    gate_fits; gate_diagnostics; gate_expected_rows
+    gate_fits; gate_diagnostics; gate_expected_rows; gate_prior_pred
     promote_run(cfg, analysis_id, data_sha, lock, results, tables, cross_layer,
                 fit_ledger, sbc_report, frequentist_targets, gate_diagnostics)
   }, format = "file"),

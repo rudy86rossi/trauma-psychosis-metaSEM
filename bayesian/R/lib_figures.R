@@ -152,8 +152,20 @@ make_figures <- function(cfg, tables, dir) {
   }
 
   # --- Figure 5: SBC rank uniformity ----------------------------------------
+  #
+  # The caption previously printed "NA simulated datasets per scenario" because
+  # it read tables$sbc_audit$n_datasets, a column that has never existed on that
+  # data frame, and then asserted that failed fits remained in the denominator,
+  # which the code did not do. Both numbers now come from the realised counts.
   sb <- tables$sbc
   if (!is.null(sb) && nrow(sb)) {
+    a  <- tables$sbc_audit
+    by <- tables$sbc_by_scenario
+    n_lab <- if (!is.null(by) && nrow(by)) {
+      u <- sort(unique(by$used_primary))
+      if (length(u) == 1) sprintf("%d", u) else sprintf("%d to %d", min(u), max(u))
+    } else "an unrecorded number of"
+
     sb$family <- factor(sb$family)
     f5 <- ggplot(sb, aes(x = p_value, y = parameter, colour = family)) +
       geom_vline(xintercept = 0.05, linetype = 2, colour = "grey55") +
@@ -163,9 +175,15 @@ make_figures <- function(cfg, tables, dir) {
       labs(x = "Rank-uniformity p value", y = NULL, colour = "Parameter family",
            title = "Simulation-based calibration: rank uniformity by parameter",
            caption = paste(
-             sprintf("Screening level: %d simulated datasets per scenario, %d rank cells.",
-                     tables$sbc_audit$n_datasets %||% NA, tables$sbc_audit$n_cells),
-             "Conditional on the plug-in sampling covariance matrices; failed fits remain in the denominator.",
+             sprintf(paste("Screening level. %s of %d attempted datasets per scenario",
+                           "entered the primary test; %d were excluded for breaching a",
+                           "diagnostic threshold and %d failed outright."),
+                     n_lab, a$total_fits / max(1, nrow(by)),
+                     a$fits_diag_failed, a$fits_failed),
+             sprintf(paste("%d rank cells. Conditional on the plug-in sampling covariance",
+                           "matrices. p values are correlated across parameters and",
+                           "scenarios, so they are not an independent family."),
+                     a$n_cells),
              sep = "\n")) +
       theme_release()
     save_figure(f5, dir, "fig5_sbc_rank_uniformity", height = 6.5)

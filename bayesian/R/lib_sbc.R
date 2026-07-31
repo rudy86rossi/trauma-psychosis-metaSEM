@@ -107,10 +107,14 @@ run_sbc_scenario <- function(cfg, scenario, lock, n_datasets = NULL) {
       fit_masem(cfg, sd_r, sprintf("sbc_%s_%03d", scenario$id, r), sampling = samp),
       error = function(e) NULL)
 
-    ## A failed or diagnostically invalid fit is recorded, not dropped: removing
-    ## it would flatter the calibration audit.
+    ## A failed or diagnostically invalid fit is RECORDED, never dropped here.
+    ## It is excluded from the primary uniformity test downstream, because a
+    ## rank from a fit that did not converge says nothing about calibration, but
+    ## it stays in the accounting and in the all-ranks sensitivity test so the
+    ## exclusion is visible rather than flattering.
     if (is.null(fit)) {
       rows[[r]] <- data.frame(scenario = scenario$id, replicate = r, parameter = NA_character_,
+                              truth = NA_real_,
                               rank = NA_integer_, status = "fit failed",
                               max_rhat = NA_real_, num_divergent = NA_integer_,
                               stringsAsFactors = FALSE)
@@ -128,8 +132,12 @@ run_sbc_scenario <- function(cfg, scenario, lock, n_datasets = NULL) {
     dz_true <- sbc_truth_dz(theta, base$xc)
     if (base$P) truths <- c(truths, setNames(dz_true, sprintf("d_z[%d]", 1:3)))
 
+    ## The truth is stored beside its rank so the archived file is a complete,
+    ## independently recomputable record: a reader can rebuild every rank from
+    ## sbc_ranks_raw.csv without rerunning 600 fits.
     rows[[r]] <- do.call(rbind, lapply(names(truths), function(nm)
       data.frame(scenario = scenario$id, replicate = r, parameter = nm,
+                 truth = unname(truths[[nm]]),
                  rank = sbc_rank(truths[[nm]], take(nm)),
                  status = if (ok) "ok" else "diagnostics failed",
                  max_rhat = dg$max_rhat, num_divergent = dg$num_divergent,
@@ -140,17 +148,15 @@ run_sbc_scenario <- function(cfg, scenario, lock, n_datasets = NULL) {
   out
 }
 
-#' Rank uniformity by parameter family, with a Monte Carlo envelope.
+#' Rank uniformity for one set of ranks.
 #'
 #' Parameters within one dataset are NOT independent replications, so the
 #' denominator is the number of independent datasets contributing to each
 #' parameter, and the chi-squared test is applied per scalar parameter.
-sbc_summary <- function(ranks, n_bins, n_cells = 20) {
-  ok <- ranks[!is.na(ranks$rank) & ranks$status == "ok", ]
+sbc_rank_uniformity <- function(rk, n_bins, n_cells) {
   fam <- function(p) sub("\\[.*$", "", p)
-
-  per_par <- do.call(rbind, lapply(split(ok, list(ok$scenario, ok$parameter), drop = TRUE),
-                                   function(g) {
+  out <- do.call(rbind, lapply(split(rk, list(rk$scenario, rk$parameter), drop = TRUE),
+                               function(g) {
     n <- nrow(g)
     ## Bin the ranks into n_cells equal cells and test uniformity.
     cells <- cut(g$rank, breaks = seq(-0.5, n_bins - 0.5, length.out = n_cells + 1),
@@ -169,14 +175,64 @@ sbc_summary <- function(ranks, n_bins, n_cells = 20) {
                max_cell = max(obs), min_cell = min(obs),
                stringsAsFactors = FALSE)
   }))
-  rownames(per_par) <- NULL
+  rownames(out) <- NULL
+  out
+}
+
+#' The calibration audit: a primary test, a sensitivity test, and the accounting
+#' that reconciles their two different denominators.
+#'
+#' A rank from a fit that breached a diagnostic threshold is not a draw from the
+#' posterior the model defines, so putting it in the PRIMARY uniformity test
+#' would conflate sampler failure with model miscalibration: a non-uniform
+#' result would not tell you which had occurred. The primary test therefore uses
+#' diagnostically acceptable fits only.
+#'
+#' Excluding them silently would be the opposite error, since a scenario whose
+#' hard replicates are exactly the ones that fail could look well calibrated
+#' precisely because the difficult cases were dropped. So every attempted fit
+#' stays in the accounting with its status, and the same test is repeated over
+#' ALL ranks as declared sensitivity evidence. If the two agree, the exclusion
+#' did not matter; if they disagree, that is itself the finding.
+#'
+#' The earlier version filtered to status == "ok" while the generated documents
+#' claimed all failures remained in the denominator. The filter was right and
+#' the claim was wrong.
+sbc_summary <- function(ranks, n_bins, n_cells = 20) {
+  usable <- ranks[!is.na(ranks$rank), ]
+  ok     <- usable[usable$status == "ok", ]
+
+  per_par  <- sbc_rank_uniformity(ok, n_bins, n_cells)
+  all_par  <- sbc_rank_uniformity(usable, n_bins, n_cells)
+  names(all_par)[names(all_par) != "scenario" & names(all_par) != "parameter" &
+                   names(all_par) != "family"] <-
+    paste0("allranks_", setdiff(names(all_par), c("scenario", "parameter", "family")))
+  per_par <- merge(per_par, all_par, by = c("scenario", "parameter", "family"),
+                   all.x = TRUE)
+
+  fit_of <- function(x) unique(paste(x$scenario, x$replicate))
+  ## Realised datasets per scenario, on both denominators. The figure caption
+  ## and both generated documents read these rather than cfg$sbc$n_datasets,
+  ## which is what was REQUESTED and diverges from what was achieved.
+  by_scen <- do.call(rbind, lapply(split(ranks, ranks$scenario), function(g) {
+    data.frame(scenario = g$scenario[1],
+               attempted = length(fit_of(g)),
+               used_primary = length(fit_of(g[g$status == "ok", ])),
+               used_all_ranks = length(fit_of(g[!is.na(g$rank), ])),
+               stringsAsFactors = FALSE)
+  }))
+  rownames(by_scen) <- NULL
 
   audit <- data.frame(
-    total_fits = length(unique(paste(ranks$scenario, ranks$replicate))),
-    fits_failed = length(unique(paste(ranks$scenario, ranks$replicate)[ranks$status == "fit failed"])),
-    fits_diag_failed = length(unique(paste(ranks$scenario, ranks$replicate)[ranks$status == "diagnostics failed"])),
+    total_fits = length(fit_of(ranks)),
+    fits_failed = length(fit_of(ranks[ranks$status == "fit failed", ])),
+    fits_diag_failed = length(fit_of(ranks[ranks$status == "diagnostics failed", ])),
+    n_datasets_min = min(by_scen$used_primary),
+    n_datasets_max = max(by_scen$used_primary),
+    n_datasets_attempted_per_scenario = paste(sort(unique(by_scen$attempted)), collapse = ","),
     n_bins = n_bins, n_cells = n_cells,
     stringsAsFactors = FALSE)
 
-  list(per_parameter = per_par, audit = audit)
+  list(per_parameter = per_par, audit = audit, by_scenario = by_scen,
+       ranks_raw = ranks)
 }

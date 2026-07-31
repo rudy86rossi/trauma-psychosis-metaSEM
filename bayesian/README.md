@@ -11,21 +11,21 @@ disagreement with the posterior.
 
 ```sh
 # 1. R packages
-Rscript --vanilla -e 'renv::restore(prompt = FALSE)'
+Rscript -e 'renv::restore(prompt = FALSE)'
 
 # 2. CmdStan is NOT managed by renv and must be installed separately at the
 #    pinned version. check_cmdstan_toolchain() checks the compiler; it does not
 #    install CmdStan.
-Rscript --vanilla -e 'cmdstanr::check_cmdstan_toolchain(fix = FALSE)'
-Rscript --vanilla -e 'cmdstanr::install_cmdstan(version = "2.36.0")'
-Rscript --vanilla -e 'stopifnot(cmdstanr::cmdstan_version() == "2.36.0")'
+Rscript -e 'cmdstanr::check_cmdstan_toolchain(fix = FALSE)'
+Rscript -e 'cmdstanr::install_cmdstan(version = "2.36.0")'
+Rscript -e 'stopifnot(cmdstanr::cmdstan_version() == "2.36.0")'
 
 # 3. Tests and a short sampling smoke test
-Rscript --vanilla -e 'testthat::test_dir("bayesian/tests/testthat")'
-Rscript --vanilla -e 'targets::tar_make(names = c("lock", "analysis_table", "fit_plan"))'
+Rscript -e 'testthat::test_dir("bayesian/tests/testthat")'
+Rscript -e 'targets::tar_make(names = c("lock", "analysis_table", "fit_plan"))'
 
 # 4. The full analysis
-Rscript --vanilla -e 'targets::tar_make()'
+Rscript -e 'targets::tar_make()'
 ```
 
 There is deliberately **no second, sequential driver**. Two orchestration paths

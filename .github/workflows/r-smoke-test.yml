@@ -23,6 +23,19 @@ jobs:
           r-version: '4.4.2'
           use-public-rspm: true
 
+      # System libraries the locked packages link against. Without libglpk-dev,
+      # igraph installs and then fails to load with "libglpk.so.40: cannot open
+      # shared object file", which aborts renv::restore() before any test,
+      # compilation or sampling step runs. renv names these itself in its own
+      # failure output; they are reproduced here so the run does not depend on
+      # reading that output.
+      - name: System dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libglpk-dev libfontconfig1-dev libfreetype6-dev libpng-dev \
+            libharfbuzz-dev libfribidi-dev libtiff5-dev libjpeg-dev pandoc
+
       - uses: r-lib/actions/setup-renv@v2
 
       - name: Cache CmdStan
@@ -36,8 +49,20 @@ jobs:
           Rscript -e 'if (!cmdstanr::cmdstan_version(error_on_NA = FALSE) %in% Sys.getenv("CMDSTAN_VERSION")) cmdstanr::install_cmdstan(version = Sys.getenv("CMDSTAN_VERSION"), cores = 2)'
           Rscript -e 'stopifnot(identical(cmdstanr::cmdstan_version(), Sys.getenv("CMDSTAN_VERSION")))'
 
-      - name: Locked environment is consistent with the lockfile
-        run: Rscript -e 'renv::status()'
+      # An ASSERTION, not a report. renv::status() returns normally whatever it
+      # finds, so calling it alone turned a broken environment into green text.
+      # Only the library-versus-lockfile relationship is asserted: renv's `used`
+      # column is a static scan of source files and reports Suggests-only
+      # packages as unused, which is not a synchronisation failure.
+      - name: Locked environment matches the lockfile
+        run: |
+          Rscript -e '
+            s <- renv::status()
+            bad <- c(s$missing$Package, s$out_of_sync$Package)
+            if (length(bad))
+              stop("Locked environment does not match renv.lock: ",
+                   paste(unique(bad), collapse = ", "))
+            cat("renv library matches the lockfile\n")'
 
       - name: Every R file parses
         run: Rscript -e 'for (f in list.files("bayesian", "[.]R$", recursive = TRUE, full.names = TRUE)) parse(f)'
@@ -56,18 +81,38 @@ jobs:
       - name: Unit tests
         run: Rscript -e 'testthat::test_dir("bayesian/tests/testthat", stop_on_failure = TRUE)'
 
-      - name: Short synthetic sampling run
+      # negsch_cps by age, deliberately. It is the ONLY specification with an
+      # incomplete moderator (Dhondt 2022 has no recorded age), so it is the
+      # only one that exercises the masking branch in make_stan_data() and the
+      # fitted-subset handling in extract_stan() and ppc_summaries(). Both broke
+      # during development and neither was caught, because every targeted test
+      # used a complete moderator. The whole extraction route is exercised here,
+      # not just the sampler, since the second defect would have printed k = 7
+      # for a six-study fit while sampling perfectly happily.
+      - name: Short sampling run over the incomplete-moderator branch
         run: |
           Rscript -e '
-            for (f in c("lib_provenance","lib_config","lib_data","lib_summaries","lib_stan","01_data_lock"))
+            for (f in c("lib_provenance","lib_config","lib_data","lib_summaries",
+                        "lib_stan","lib_ppc","01_data_lock"))
               source(file.path("bayesian/R", paste0(f, ".R")))
             cfg <- load_config(); lock <- build_data_lock(cfg)
-            sd_ <- make_stan_data(cfg, lock$analysis$depress_cps, lock$vz_chol$depress_cps)
+            key <- "negsch_cps"; mod <- "age"
+            df <- lock$analysis[[key]]; mods <- lock$mods[[key]]
+            keep <- mods[[mod]]$keep
+            stopifnot(sum(keep) < nrow(df))          # the branch must be live
+            sd_ <- make_stan_data(cfg, df, lock$vz_chol[[key]], mod, mods)
+            stopifnot(sd_$K == sum(keep), length(sd_$x) == sd_$K)
             s <- list(chains = 2, iter_warmup = 200, iter_sampling = 200,
                       adapt_delta = 0.95, max_treedepth = 10)
             fit <- fit_masem(cfg, sd_, "ci_smoke", sampling = s)
-            stopifnot(nrow(fit$summary("alpha")) == 3)
-            cat("smoke fit ok\n")'
+            df_fit <- df[keep, , drop = FALSE]
+            ex  <- extract_stan(cfg, fit, key, mod, mods[[mod]]$spec, df_fit, mods, "ok")
+            ppc <- ppc_summaries(cfg, fit, key, mod, df_fit)
+            stopifnot(nrow(fit$summary("alpha")) == 3,
+                      all(ex$slopes$k_samples == sum(keep)),
+                      nrow(ppc$study) == sum(keep),
+                      nrow(ex$heterogeneity) == 3)
+            cat("smoke fit and extraction ok, k =", sum(keep), "of", nrow(df), "\n")'
 
       - name: The build left no tracked file modified
         run: git diff --exit-code

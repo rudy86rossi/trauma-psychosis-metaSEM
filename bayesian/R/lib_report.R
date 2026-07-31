@@ -42,6 +42,12 @@ collate_results <- function(fit_results) {
     pooled      = grab("pooled"),
     predict     = grab("predict"),
     contrasts   = grab("contrasts"),
+    heterogeneity = grab("heterogeneity"),
+    ## Prior predictive and power scaling, previously computed and discarded.
+    power_scaling = rbind_fill(lapply(flat, function(x) x$power_scaling)),
+    prior_predictive = rbind_fill(lapply(flat, function(x) x$prior_predictive$summary)),
+    prior_predictive_verdict = rbind_fill(lapply(flat, function(x) x$prior_predictive$verdict)),
+    prior_predictive_draws = rbind_fill(lapply(flat, function(x) x$prior_predictive$draws)),
     ppc_study      = if (length(ppc)) bind_ppc("study") else NULL,
     ppc_coordinate = if (length(ppc)) bind_ppc("coordinate") else NULL,
     ppc_overall    = if (length(ppc)) bind_ppc("overall") else NULL,
@@ -161,10 +167,20 @@ build_tables <- function(cfg, lock, results, cross_layer, freq, sbc) {
 
   ## Prediction-interval summary: how many indirect-effect intervals include
   ## zero, counted rather than asserted.
+  ## Split by whether the interval is conditional on a moderator value. The
+  ## moderator-endpoint intervals are NOT independent of the moderator analysis,
+  ## so pooling all of them under that heading overstated the independent
+  ## evidence.
   ind_pi <- predict[predict$quantity == "ind", ]
+  unmod <- ind_pi$moderator == "null"
+  zero_in <- ind_pi$q_lo < 0 & ind_pi$q_hi > 0
   pi_summary <- data.frame(
     n_intervals = nrow(ind_pi),
-    n_including_zero = sum(ind_pi$q_lo < 0 & ind_pi$q_hi > 0),
+    n_including_zero = sum(zero_in),
+    n_unmoderated = sum(unmod),
+    n_unmoderated_including_zero = sum(unmod & zero_in),
+    n_endpoint = sum(!unmod),
+    n_endpoint_including_zero = sum(!unmod & zero_in),
     stringsAsFactors = FALSE)
 
   ## Leave-one-study-out stability for every slope that reached a decision.
@@ -235,6 +251,13 @@ build_tables <- function(cfg, lock, results, cross_layer, freq, sbc) {
        stability = stability, loso_detail = loso_detail,
        prior_stability = prior_stability,
        sbc = sbc$per_parameter, sbc_audit = sbc$audit,
+       sbc_by_scenario = sbc$by_scenario, sbc_ranks_raw = sbc$ranks_raw,
+       heterogeneity = results$heterogeneity[
+         results$heterogeneity$fit_class == "stan_primary", ],
+       power_scaling = results$power_scaling,
+       prior_predictive = results$prior_predictive,
+       prior_predictive_verdict = results$prior_predictive_verdict,
+       prior_predictive_draws = results$prior_predictive_draws,
        ppc_overall = results$ppc_overall, ppc_study = results$ppc_study,
        ppc_coordinate = results$ppc_coordinate,
        diagnostics = results$diagnostics, vz_comparison = lock$vz_comparison,
@@ -409,8 +432,16 @@ promote_run <- function(cfg, analysis_id, data_sha, lock, results, tables,
 
   w(tables$diagnostics,     "diagnostics", "fit_diagnostics.csv")
   w(ledger,                 "diagnostics", "fit_ledger.csv")
+  w(tables$heterogeneity,            "tables", "heterogeneity.csv")
+  w(tables$power_scaling,            "diagnostics", "power_scaling.csv")
+  w(tables$prior_predictive,         "tables", "prior_predictive.csv")
+  w(tables$prior_predictive_verdict, "tables", "prior_predictive_verdict.csv")
   w(tables$sbc,             "diagnostics", "sbc_rank_uniformity.csv")
   w(tables$sbc_audit,       "diagnostics", "sbc_audit.csv")
+  w(tables$sbc_by_scenario, "diagnostics", "sbc_by_scenario.csv")
+  ## Raw truths, ranks and per-replicate diagnostics. Small enough to version,
+  ## so exact recomputation of the calibration audit needs no refit.
+  w(tables$sbc_ranks_raw,   "diagnostics", "sbc_ranks_raw.csv")
   w(tables$ppc_overall,     "diagnostics", "ppc_overall.csv")
   w(tables$ppc_study,       "diagnostics", "ppc_study.csv")
   w(tables$ppc_coordinate,  "diagnostics", "ppc_coordinate.csv")

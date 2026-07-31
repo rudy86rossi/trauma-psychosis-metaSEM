@@ -14,7 +14,7 @@ build_documents <- function(cfg, lock, run_dir, out_dir = "bayesian") {
   R <- read_run(run_dir)
   res <- write_results_doc(R, cfg, lock, file.path(out_dir, "BAYESIAN_METAREG_RESULTS.md"))
   met <- write_methods_doc(R, cfg, lock, file.path(out_dir, "BAYESIAN_METAREG_METHODS.md"))
-  check_documents(c(res, met), R, cfg)
+  check_documents(c(res, met), R, cfg, lock = lock)
   c(res, met)
 }
 
@@ -23,8 +23,18 @@ build_documents <- function(cfg, lock, run_dir, out_dir = "bayesian") {
 #' Fails on: em dashes (the project style forbids them), US spellings, and any
 #' three-decimal number in the prose that appears in no source table. The last
 #' is the one that matters: it is what a hand-edited figure would trip.
-check_documents <- function(paths, R, cfg, tol = 5e-4) {
+check_documents <- function(paths, R, cfg, tol = 5e-4, lock = NULL) {
   problems <- character(0)
+
+  ## The analytical unit may not be described as verified while any row of the
+  ## sample registry is still `derived_unverified`. Sample identity is decided
+  ## by paste(studyID, year) until a human with the papers says otherwise, and
+  ## that limitation must survive every rewrite of the prose, so it is enforced
+  ## here rather than left as a note someone remembers.
+  unverified <- if (!is.null(lock) && !is.null(lock$samples))
+    sum(lock$samples$verification_status != "verified") else NA_integer_
+  verified_claims <- c("verified independent sample", "verified analytical unit",
+                       "curated sample registry", "independently verified sample")
 
   ## Pool every numeric value the run produced, at the precision the documents
   ## print, so a generated figure is always found and an invented one is not.
@@ -43,6 +53,18 @@ check_documents <- function(paths, R, cfg, tol = 5e-4) {
     if (any(grepl("—", txt)))
       problems <- c(problems, sprintf("%s: contains an em dash (project style forbids them) on line(s) %s",
                                       nm, paste(which(grepl("—", txt)), collapse = ", ")))
+
+    if (!is.na(unverified) && unverified > 0) {
+      claimed <- verified_claims[vapply(verified_claims, function(w)
+        any(grepl(w, txt, ignore.case = TRUE)), logical(1))]
+      if (length(claimed))
+        problems <- c(problems, sprintf(
+          paste("%s: claims %s while %d of %d registry rows are still",
+                "derived_unverified. Sample identity is derived from author and year",
+                "and has not been externally verified."),
+          nm, paste(sQuote(claimed), collapse = ", "), unverified,
+          nrow(lock$samples)))
+    }
 
     us <- c("analyze", "analyzed", "behavior", "modeling", "modeled", "labeled",
             "randomization", "generalization", "center", "centered", "favor")

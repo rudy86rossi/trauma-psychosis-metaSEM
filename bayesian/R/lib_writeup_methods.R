@@ -183,8 +183,12 @@ write_methods_doc <- function(R, cfg, lock, path) {
   # --- validation
   add("## Validation", "")
   a <- R$sbc_audit
+  ## The REQUESTED number of datasets is cfg$sbc$n_datasets; the number reaching
+  ## the primary test is smaller wherever a replicate breached a diagnostic
+  ## threshold. Printing the request as though it were the outcome is how this
+  ## section came to contradict its own results document.
   add(sprintf(paste("**Simulation-based calibration.** Formal rank-based SBC (Talts et al. 2018) over",
-                    "%d prespecified scenarios of %d simulated datasets each, exercising the",
+                    "%d prespecified scenarios, %d datasets simulated per scenario, exercising the",
                     "intercept-only code path, continuous and binary moderation, the smallest and",
                     "largest number of studies, contrasting sampling-covariance structures and a",
                     "clamped reporting contrast. Truth was drawn from the prior and data from the",
@@ -192,11 +196,21 @@ write_methods_doc <- function(R, cfg, lock, path) {
                     "posterior draws was recorded. Thinning was fixed before any rank distribution",
                     "was inspected and ties were broken at random."),
               length(unique(R$sbc$scenario)), cfg$sbc$n_datasets, cfg$sbc$retained_draws), "")
+  add(sprintf(paste("The primary rank-uniformity test uses the %s datasets per scenario whose fit",
+                    "met every diagnostic threshold. A rank taken from a fit that did not converge",
+                    "is not a draw from the posterior the model defines, so it cannot separate a",
+                    "miscalibrated model from a failed sampler. Excluding such fits silently would",
+                    "be the opposite error, because the hardest replicates are the likeliest to",
+                    "fail, so all %d attempted fits are retained in the audit table with their",
+                    "status, and the same tests are repeated over all ranks and reported as",
+                    "sensitivity evidence."),
+              if (a$n_datasets_min == a$n_datasets_max) as.character(a$n_datasets_min)
+              else sprintf("%d to %d", a$n_datasets_min, a$n_datasets_max),
+              a$total_fits), "")
   add(paste("This is a screening-level check, not high-powered proof of calibration, and it is",
             "conditional on the plug-in sampling covariance matrices: it validates the implemented",
             "likelihood, the generated quantities and the sampler given those matrices, not the",
-            "uncertainty arising from estimating them from participant-level data. Fits that",
-            "failed or breached a diagnostic threshold remain in the denominator."), "")
+            "uncertainty arising from estimating them from participant-level data."), "")
   add("", paste("**Posterior predictive checks** were computed in both forms for every pathway:",
                 "conditional on the fitted study effects, and with fresh random effects. Both are",
                 "archived because a conditional check alone can look satisfactory simply because",

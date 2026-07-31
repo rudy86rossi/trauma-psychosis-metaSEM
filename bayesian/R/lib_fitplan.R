@@ -181,8 +181,8 @@ safe_run_fit <- function(cfg, lock, row) {
     message("FIT FAILED: ", row$fit_id, " : ", msg)
     list(fit_id = row$fit_id, fit_class = row$fit_class, status = "error",
          error = msg, diagnostics = NULL, slopes = NULL, pooled = NULL,
-         predict = NULL, contrasts = NULL, ppc = NULL, draws_d_z = NULL,
-         seconds = NA_real_)
+         predict = NULL, contrasts = NULL, heterogeneity = NULL, ppc = NULL,
+         draws_d_z = NULL, power_scaling = NULL, prior_predictive = NULL, seconds = NA_real_)
   })
 }
 
@@ -262,6 +262,7 @@ run_fit <- function(cfg, lock, row) {
       brms_d_z(cfg, fit, spec) else NULL
     return(list(fit_id = row$fit_id, fit_class = row$fit_class, status = "ok",
                 diagnostics = dg, slopes = slopes, draws_d_z = draws,
+                heterogeneity = NULL, power_scaling = NULL, prior_predictive = NULL,
                 seconds = as.numeric(difftime(Sys.time(), t0, units = "secs"))))
   }
 
@@ -273,7 +274,7 @@ run_fit <- function(cfg, lock, row) {
   ex <- extract_stan(cfg, fit, key, mod,
                      spec %||% scale_spec(cfg, MOD_NAMES(cfg)[1]),
                      df_fit, mods, reportable)
-  for (nm in c("slopes", "pooled", "predict", "contrasts")) {
+  for (nm in c("slopes", "pooled", "predict", "contrasts", "heterogeneity")) {
     if (!is.null(ex[[nm]]))
       ex[[nm]] <- cbind(data.frame(fit_id = row$fit_id, fit_class = row$fit_class,
                                    variant = row$variant, drop_sample = row$drop_sample,
@@ -285,14 +286,26 @@ run_fit <- function(cfg, lock, row) {
                                      stringsAsFactors = FALSE), ex$diagnostics)
 
   ## Posterior predictive checks and matched draws, for the primary fits only.
-  ppc <- NULL; draws <- NULL
+  ppc <- NULL; draws <- NULL; psens <- NULL; prior_pc <- NULL
   if (identical(row$fit_class, "stan_primary")) {
     ppc <- ppc_summaries(cfg, fit, key, mod, df_fit)
     if (!is.null(mod)) draws <- stan_d_z(fit)
+    ## Power scaling on the primary fits, answering which of the prior and the
+    ## likelihood drives each posterior. The Stan programme already emits
+    ## log_lik and lprior for this; until now both were discarded while the
+    ## configuration advertised the analysis.
+    if (isTRUE(cfg$sensitivity$priorsense))
+      psens <- power_scaling(cfg, fit, row$fit_id)
   }
+
+  ## The prior predictive fits exist to be looked at. Previously they were run,
+  ## converged, and had nothing extracted from them at all.
+  if (identical(row$fit_class, "prior_predictive"))
+    prior_pc <- prior_predictive_check(cfg, fit, key)
 
   list(fit_id = row$fit_id, fit_class = row$fit_class, status = "ok",
        diagnostics = ex$diagnostics, slopes = ex$slopes, pooled = ex$pooled,
-       predict = ex$predict, contrasts = ex$contrasts, ppc = ppc, draws_d_z = draws,
+       predict = ex$predict, contrasts = ex$contrasts, heterogeneity = ex$heterogeneity,
+       ppc = ppc, draws_d_z = draws, power_scaling = psens, prior_predictive = prior_pc,
        seconds = as.numeric(difftime(Sys.time(), t0, units = "secs")))
 }

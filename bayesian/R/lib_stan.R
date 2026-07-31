@@ -203,6 +203,17 @@ extract_stan <- function(cfg, fit, key, mod, spec, df, mods, reportable) {
     })))
   }
 
+  ## --- between-study heterogeneity.
+  ## The prediction intervals are entirely tau-driven (eta_new = eta + N(0, tau)),
+  ## and the write-up appeals to heterogeneity being weakly identified at this k
+  ## to explain their width. Neither claim was checkable, because tau appeared in
+  ## no released table at all.
+  heterogeneity <- do.call(rbind, lapply(1:3, function(j) {
+    v <- dr[[sprintf("tau[%d]", j)]]
+    cbind(base, data.frame(coordinate = pairs[j], quantity = "tau",
+                           stringsAsFactors = FALSE), estimate_summary(v))
+  }))
+
   ## --- pooled mediation quantities at each contrast value
   ncc <- if (is_mod) length(mods[[mod]]$xc) else 1L
   pooled <- do.call(rbind, lapply(seq_len(ncc), function(ci) {
@@ -243,5 +254,6 @@ extract_stan <- function(cfg, fit, key, mod, spec, df, mods, reportable) {
   }
 
   list(slopes = slopes, pooled = pooled, predict = predict, contrasts = contrasts,
+       heterogeneity = heterogeneity,
        diagnostics = cbind(base, fit_diagnostics(fit, attr(fit, "fit_id"), cfg)))
 }
