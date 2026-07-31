@@ -108,10 +108,71 @@ prior_unit_sd_for <- function(cfg, moderator, beta_full_sd) {
   beta_full_sd / (diff(unlist(mm$nominal_contrast)) / mm$unit)
 }
 
+#' Everything one moderator implies for one set of studies: support, centring,
+#' clamped contrast, reportability and whether a decision is permitted.
+#'
+#' This is the SINGLE derivation. The data lock calls it for the full pathway;
+#' the leave-one-study-out and alternative-instrument refits call it again for
+#' their own subset. Previously the two paths had separate implementations and
+#' only the first computed reportability, so a deletion that collapsed a binary
+#' arm inherited its parent's status and still received a categorical verdict on
+#' a group of one. Deriving both from the same function is what makes that
+#' impossible rather than merely fixed.
+#'
+#' @param d data frame of the studies actually being fitted.
+#' @return list with the model inputs (keep, x, centre, unit, xc, spec) and the
+#'   reporting status (k, status, note). `spec$decision_permitted` is already set.
+moderator_spec <- function(cfg, d, m) {
+  mm   <- cfg$moderators[[m]]
+  if (is.null(mm)) stop("Unknown moderator: ", m)
+  vals <- d[[m]]
+  keep <- !is.na(vals)
+  kk   <- sum(keep)
+
+  if (identical(mm$kind, "binary")) {
+    n1 <- sum(vals[keep] == 1); n0 <- sum(vals[keep] == 0)
+    status <- if (min(n0, n1) < cfg$reportability$binary_min_per_arm) "not reported"
+              else if (min(n0, n1) <= cfg$reportability$binary_fragile_per_arm) "fragile"
+              else "ok"
+    note   <- sprintf("clinical k = %d, non-clinical k = %d", n1, n0)
+    spec   <- scale_spec(cfg, m, NULL)
+    centre <- 0
+    x      <- vals
+    xc     <- c(0, 1)
+  } else {
+    status <- if (kk < cfg$reportability$continuous_min_k) "not reported"
+              else if (kk <= cfg$reportability$continuous_fragile_k) "fragile"
+              else "ok"
+    note <- sprintf("k = %d of %d rows", kk, nrow(d))
+    ## Clamp the reported contrast to observed support. The nominal contrast is
+    ## retained in the record; the label is not reused for a shorter one.
+    rng <- if (any(keep)) range(vals[keep]) else unlist(mm$nominal_contrast)
+    nom <- unlist(mm$nominal_contrast)
+    sup <- c(max(nom[1], rng[1]), min(nom[2], rng[2]))
+    if (sup[2] <= sup[1]) sup <- rng
+    spec   <- scale_spec(cfg, m, sup)
+    centre <- if (any(keep)) mean(vals[keep]) else 0
+    x      <- (vals - centre) / mm$unit
+    xc     <- (c(spec$supported_lo, spec$supported_hi) - centre) / mm$unit
+  }
+
+  ## A model that is not reported still needs no decision.
+  spec$decision_permitted <- status != "not reported"
+
+  list(keep = keep, x = ifelse(is.na(x), 0, x), centre = centre,
+       unit = mm$unit, xc = xc, spec = spec,
+       k = kk, status = status, note = note)
+}
+
 #' Contrast label for tables and figures. A clamped contrast is never described
 #' with its nominal label.
+#'
+#' The binary label states the SUBTRACTION, not the level names in an arbitrary
+#' order. `d_z = z_pop[NC] - z_pop[1]` with xc = c(0, 1) and clinical coded 1 is
+#' clinical minus non-clinical, so a label reading "non-clinical vs clinical"
+#' invites a reader to take a negative estimate as the opposite finding.
 contrast_label <- function(spec) {
-  if (identical(spec$kind, "binary")) return("non-clinical vs clinical")
+  if (identical(spec$kind, "binary")) return("clinical minus non-clinical")
   sprintf("%g to %g", spec$supported_lo, spec$supported_hi)
 }
 

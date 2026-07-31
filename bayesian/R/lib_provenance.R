@@ -210,6 +210,167 @@ apply_quality_scores <- function(df, qs, workbook, id_col, year_col, nos_col = "
   df
 }
 
+## ---- the independent-sample registry ---------------------------------------
+#
+# The analytical unit is one independent participant sample. Until this was
+# added, `sample_id` was a serial relabelling of `paste(studyID, year)`:
+# samples.csv was WRITTEN by the lock and never read back, so the claim that a
+# curated registry defined the unit was false, and nothing detected two cohorts
+# published by one author in one year or one cohort appearing under two labels.
+#
+# The registry does not, and cannot, decide sample identity by itself. That
+# needs a human with the papers. What it does is make the derivation an explicit,
+# reviewable artefact, hold the identifiers stable across workbook revisions, and
+# separate two different kinds of problem:
+#
+#   STRUCTURAL failures stop the build. The data contradict themselves and no
+#   amount of judgement rescues them.
+#   REVIEW items do not stop the build. The derivation may be wrong in a way
+#   only an author can settle, so it is surfaced by name rather than buried.
+
+SAMPLE_REGISTRY_COLS <- c("sample_id", "sample_key", "study_label", "year",
+                          "n_reported", "pathways", "verification_status",
+                          "verification_source", "verified_by", "verified_date")
+
+VERIFICATION_STATUSES <- c("derived_unverified", "verified", "disputed")
+
+#' Derive the registry from the observed effect rows, then reconcile it with the
+#' committed source table if one exists.
+#'
+#' @param ALL every eligible effect row, carrying `sample_key`, `pathway`, `n`.
+#' @param path committed registry. Absent on a first run, which seeds it.
+#' @return list(samples, review_queue)
+build_sample_registry <- function(ALL, path = "data/provenance/samples.csv") {
+  sk <- unique(ALL$sample_key)
+  derived <- data.frame(
+    sample_key  = sk,
+    study_label = sub(" [0-9]{4}$", "", sk),
+    year        = as.integer(sub("^.* ", "", sk)),
+    stringsAsFactors = FALSE)
+  derived$pathways <- vapply(derived$sample_key, function(k)
+    paste(sort(unique(ALL$pathway[ALL$sample_key == k])), collapse = ";"), character(1))
+
+  ## STRUCTURAL: one sample cannot have two participant counts. The previous
+  ## code took whichever row happened to come first, so a genuine disagreement
+  ## between two workbooks about the same cohort was silently resolved by row
+  ## order.
+  n_by_key <- lapply(sk, function(k) sort(unique(ALL$n[ALL$sample_key == k])))
+  names(n_by_key) <- sk
+  inconsistent <- names(n_by_key)[vapply(n_by_key, length, integer(1)) > 1L]
+  if (length(inconsistent))
+    stop("A sample carries more than one participant count, so it is either two ",
+         "samples or a transcription error: ",
+         paste(vapply(inconsistent, function(k)
+           sprintf("%s (n = %s)", k, paste(n_by_key[[k]], collapse = ", ")),
+           character(1)), collapse = "; "),
+         ". Resolve in the workbook or split the sample key before proceeding.")
+  derived$n_reported <- vapply(n_by_key, function(x) x[1], numeric(1))[derived$sample_key]
+
+  ## STRUCTURAL: two rows in one pathway sharing an author-year key means the
+  ## key cannot separate them, so the instrument-priority rule would demote one
+  ## arbitrarily. Rows already marked as alternative instruments are excluded,
+  ## since those are a deliberate second measurement of ONE sample.
+  prim <- ALL[ALL$analysis_role == "primary" & !ALL$excluded, ]
+  clash <- prim[duplicated(paste(prim$pathway, prim$sample_key)), ]
+  if (nrow(clash))
+    stop("Two primary rows in one pathway share an author-year key, so the key ",
+         "cannot identify the sample: ",
+         paste(unique(paste(clash$pathway, clash$sample_key)), collapse = ", "), ".")
+
+  ## Reconcile with the committed registry, which owns the identifiers.
+  if (file.exists(path)) {
+    reg <- utils::read.csv(path, stringsAsFactors = FALSE, na.strings = "")
+    miss_col <- setdiff(SAMPLE_REGISTRY_COLS, names(reg))
+    if (length(miss_col))
+      stop("samples.csv is missing required column(s): ",
+           paste(miss_col, collapse = ", "),
+           ". Delete the file to reseed it, then re-verify.")
+
+    undeclared <- setdiff(derived$sample_key, reg$sample_key)
+    if (length(undeclared))
+      stop(length(undeclared), " effect row(s) map to no declared sample_id: ",
+           paste(utils::head(undeclared, 5), collapse = ", "),
+           ". Add them to data/provenance/samples.csv, with a verification status, ",
+           "before they can enter the analysis.")
+
+    bad <- setdiff(unique(reg$verification_status), VERIFICATION_STATUSES)
+    if (length(bad))
+      stop("Unknown verification_status in samples.csv: ",
+           paste(bad, collapse = ", "), ". Allowed: ",
+           paste(VERIFICATION_STATUSES, collapse = ", "), ".")
+
+    ## A claim of verification must name who made it and when. Otherwise
+    ## "verified" is a word rather than an assertion anyone is answerable for.
+    v <- reg[reg$verification_status == "verified", ]
+    unattributed <- v$sample_id[is.na(v$verified_by) | is.na(v$verified_date) |
+                                  !nzchar(trimws(v$verified_by))]
+    if (length(unattributed))
+      stop("Sample(s) marked verified without verified_by and verified_date: ",
+           paste(unattributed, collapse = ", "), ".")
+
+    samples <- merge(reg[, c("sample_id", "sample_key", "verification_status",
+                             "verification_source", "verified_by", "verified_date")],
+                     derived, by = "sample_key", all.y = TRUE)
+    samples <- samples[order(samples$sample_id), SAMPLE_REGISTRY_COLS]
+  } else {
+    ## First run: seed the registry. Every row is unverified by construction.
+    derived <- derived[order(derived$year, derived$study_label), ]
+    samples <- cbind(
+      data.frame(sample_id = sprintf("S%03d", seq_len(nrow(derived))),
+                 stringsAsFactors = FALSE),
+      derived,
+      data.frame(verification_status = "derived_unverified",
+                 verification_source = NA_character_,
+                 verified_by = NA_character_, verified_date = NA_character_,
+                 stringsAsFactors = FALSE))[, SAMPLE_REGISTRY_COLS]
+  }
+  rownames(samples) <- NULL
+
+  list(samples = samples, review_queue = sample_review_queue(samples, ALL))
+}
+
+#' Cases the derivation cannot settle, named so a reviewer can settle them.
+#'
+#' Emitted, not raised. Each is a question about the world, not a contradiction
+#' in the data, so stopping the build would be the wrong response.
+sample_review_queue <- function(samples, ALL) {
+  q <- list()
+  add <- function(...) q[[length(q) + 1L]] <<- data.frame(..., stringsAsFactors = FALSE)
+
+  ## One key appearing in two source workbooks is only one sample if the same
+  ## participants were measured for both mediators. Nothing in the spreadsheets
+  ## records that, so it is asserted by a string match until someone checks.
+  wb <- unique(ALL[, c("sample_key", "pathway")])
+  src <- vapply(split(wb$pathway, wb$sample_key), function(p)
+    length(unique(sub("_.*$", "", p))), integer(1))
+  for (k in names(src)[src > 1])
+    add(sample_key = k, issue = "spans more than one source workbook",
+        detail = paste(sort(unique(wb$pathway[wb$sample_key == k])), collapse = ";"),
+        question = "Are these the same participants, measured for both mediators?")
+
+  ## A label that will not round-trip cleanly is a label that can silently fail
+  ## to match its twin in another workbook.
+  odd <- samples$sample_key[grepl("[,;‘’‚“”]|\\s{2,}", samples$sample_key)]
+  for (k in odd)
+    add(sample_key = k, issue = "punctuation in the study label",
+        detail = k,
+        question = "Does this label match the same cohort elsewhere?")
+
+  ## Same first author within a year or two, which is where an accidental
+  ## collapse or an accidental split is most likely.
+  lab <- samples$study_label
+  for (i in seq_along(lab)) for (j in seq_along(lab)) {
+    if (j <= i || lab[i] != lab[j]) next
+    if (abs(samples$year[i] - samples$year[j]) <= 2)
+      add(sample_key = samples$sample_key[i], issue = "same first author, adjacent years",
+          detail = paste(samples$sample_key[i], "and", samples$sample_key[j]),
+          question = "Are these two reports of one cohort?")
+  }
+
+  if (!length(q)) return(NULL)
+  out <- do.call(rbind, q); rownames(out) <- NULL; out
+}
+
 ## ---- canonicalisation ------------------------------------------------------
 
 #' Write a data frame in a form whose SHA-256 is reproducible across machines.

@@ -26,19 +26,18 @@ build_data_lock <- function(cfg, root = ".") {
   ## samples.csv: one row per independent participant sample.
   ## effects.csv: one row per pathway, instrument and effect estimate.
   ## Blose DES-II and PDEQ share a sample_id and differ by effect_id and role.
-  sk <- unique(ALL$sample_key)
-  samples <- data.frame(
-    sample_id   = sprintf("S%03d", seq_along(sk)),
-    sample_key  = sk,
-    study_label = sub(" [0-9]{4}$", "", sk),
-    year        = as.integer(sub("^.* ", "", sk)),
-    stringsAsFactors = FALSE)
-  agg <- ALL[!duplicated(ALL$sample_key), ]
-  samples$n_reported <- agg$n[match(samples$sample_key, agg$sample_key)]
-  samples$pathways   <- vapply(samples$sample_key, function(k)
-    paste(sort(unique(ALL$pathway[ALL$sample_key == k])), collapse = ";"), character(1))
+  ## The registry is READ, not merely written. It owns the identifiers, so they
+  ## stay stable when a workbook is revised, and it enforces the structural
+  ## invariants the author-year heuristic cannot. Cases needing human judgement
+  ## are surfaced in the review queue rather than silently resolved.
+  reg <- build_sample_registry(ALL, file.path(root, "data/provenance/samples.csv"))
+  samples <- reg$samples
+  review_queue <- reg$review_queue
 
   ALL$sample_id <- samples$sample_id[match(ALL$sample_key, samples$sample_key)]
+  if (anyNA(ALL$sample_id))
+    stop("Effect rows with no sample_id after registry join: ",
+         paste(unique(ALL$sample_key[is.na(ALL$sample_id)]), collapse = ", "))
 
   effects <- ALL[, c("effect_id", "sample_id", "pathway", "label", "studyID", "year", "n",
                      "r_XM", "r_XY", "r_MY", "min_eigen", "age", "female", "nos", "clinical",
@@ -75,47 +74,18 @@ build_data_lock <- function(cfg, root = ".") {
     d <- ANALYSIS[[k]]
     mk <- list()
     for (m in MOD_NAMES(cfg)) {
-      mm   <- cfg$moderators[[m]]
-      vals <- d[[m]]
-      keep <- !is.na(vals)
-      kk   <- sum(keep)
+      ## One derivation, shared with the deletion refits. See moderator_spec().
+      ms <- moderator_spec(cfg, d, m)
 
-      if (identical(mm$kind, "binary")) {
-        n1 <- sum(vals[keep] == 1); n0 <- sum(vals[keep] == 0)
-        status <- if (min(n0, n1) < cfg$reportability$binary_min_per_arm) "not reported"
-                  else if (min(n0, n1) <= cfg$reportability$binary_fragile_per_arm) "fragile"
-                  else "ok"
-        note <- sprintf("clinical k = %d, non-clinical k = %d", n1, n0)
-        spec <- scale_spec(cfg, m, NULL)
-        centre <- 0
-      } else {
-        status <- if (kk < cfg$reportability$continuous_min_k) "not reported"
-                  else if (kk <= cfg$reportability$continuous_fragile_k) "fragile"
-                  else "ok"
-        note <- sprintf("k = %d of %d rows", kk, nrow(d))
-        ## Clamp the reported contrast to observed support. The nominal contrast
-        ## is retained in the record; the label is not reused for a shorter one.
-        rng <- range(vals[keep])
-        nom <- unlist(mm$nominal_contrast)
-        sup <- c(max(nom[1], rng[1]), min(nom[2], rng[2]))
-        if (sup[2] <= sup[1]) sup <- rng
-        spec <- scale_spec(cfg, m, sup)
-        centre <- mean(vals[keep])
-      }
-
-      ## A model that is not reported still needs no decision.
-      spec$decision_permitted <- status != "not reported"
+      spec <- ms$spec
       spec$pathway <- k
       support[[paste(k, m)]] <- spec
-      report[[paste(k, m)]] <- data.frame(pathway = k, moderator = m, k = kk,
-                                          status = status, note = note,
+      report[[paste(k, m)]] <- data.frame(pathway = k, moderator = m, k = ms$k,
+                                          status = ms$status, note = ms$note,
                                           stringsAsFactors = FALSE)
 
-      x <- if (identical(mm$kind, "binary")) vals else (vals - centre) / mm$unit
-      xc <- if (identical(mm$kind, "binary")) c(0, 1)
-            else (c(spec$supported_lo, spec$supported_hi) - centre) / mm$unit
-      mk[[m]] <- list(keep = keep, x = ifelse(is.na(x), 0, x), centre = centre,
-                      unit = mm$unit, xc = xc, spec = spec)
+      mk[[m]] <- ms[c("keep", "x", "centre", "unit", "xc", "spec",
+                      "status", "k", "note")]
     }
     mods[[k]] <- mk
   }
@@ -147,7 +117,8 @@ build_data_lock <- function(cfg, root = ".") {
 
   list(analysis = ANALYSIS, alternative = ALTERNATIVE, mods = mods,
        vz_chol = VZ, vz_chol_alt = VZ_ALT, vz_chol_weighted = VZ_W,
-       samples = samples, effects = effects, support = SUPPORT, reportability = REPORT,
+       samples = samples, review_queue = review_queue,
+       effects = effects, support = SUPPORT, reportability = REPORT,
        vz_comparison = vzc, hashes = locked$hashes, exclusions = EXCLUSIONS,
        ledger = locked$ledger, quality = locked$quality)
 }
@@ -169,7 +140,24 @@ write_data_lock <- function(lock, root = ".") {
   write_canonical(tab[, cols], path, sort_by = c("pathway", "sample_id", "effect_id"))
 
   prov <- file.path(root, "data", "provenance")
-  write.csv(lock$samples,       file.path(prov, "samples.csv"), row.names = FALSE, na = "")
+
+  ## samples.csv is a SOURCE table, so the pipeline seeds it once and never
+  ## writes over it again. Overwriting would silently discard a reviewer's
+  ## verification entries on the next run, which is the opposite of what a
+  ## curated registry is for. Changes to it are made by hand and reviewed.
+  spath <- file.path(prov, "samples.csv")
+  if (!file.exists(spath))
+    write.csv(lock$samples, spath, row.names = FALSE, na = "")
+
+  ## The review queue IS derived, so it is regenerated every run. An empty queue
+  ## is written as an empty file rather than omitted, so its absence always
+  ## means the lock did not run, never that there was nothing to review.
+  rq <- lock$review_queue
+  if (is.null(rq))
+    rq <- data.frame(sample_key = character(0), issue = character(0),
+                     detail = character(0), question = character(0))
+  write.csv(rq, file.path(prov, "sample_review_queue.csv"), row.names = FALSE, na = "")
+
   write.csv(lock$effects,       file.path(prov, "effects.csv"), row.names = FALSE, na = "")
   write.csv(lock$exclusions,    file.path(prov, "exclusions.csv"), row.names = FALSE, na = "")
   write.csv(lock$reportability, file.path(prov, "reportability.csv"), row.names = FALSE, na = "")

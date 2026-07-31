@@ -171,7 +171,13 @@ build_tables <- function(cfg, lock, results, cross_layer, freq, sbc) {
   loso <- results$slopes[results$slopes$fit_class %in%
                            c("sens_loso_stan", "sens_loso_brms") &
                            results$slopes$estimand == "d_z", ]
-  stability <- NULL
+  ## A deletion that collapses a binary arm below the minimum is NOT evidence
+  ## about the decision's robustness: it is a model that should not have been
+  ## reported at all. Such refits are counted separately and excluded from the
+  ## quoted median range, because including them contaminates the range with
+  ## estimates the project's own rule forbids reporting. Both counts are
+  ## published so a reader can see the exclusion rather than infer it.
+  stability <- NULL; loso_detail <- NULL
   if (nrow(decided) && nrow(loso)) {
     stability <- do.call(rbind, lapply(seq_len(nrow(decided)), function(i) {
       d <- decided[i, ]
@@ -179,14 +185,27 @@ build_tables <- function(cfg, lock, results, cross_layer, freq, sbc) {
       g <- loso[loso$fit_class == layer & loso$pathway == d$pathway &
                   loso$moderator == d$moderator & loso$coordinate == d$coordinate, ]
       if (!nrow(g)) return(NULL)
+      rep_g <- g[g$reportable != "not reported", ]
       data.frame(pathway = d$pathway, moderator = d$moderator,
                  coordinate = d$coordinate, layer = d$fit_class,
                  primary_decision = d$decision, primary_median = d$median,
                  n_deletions = nrow(g),
-                 n_retaining_decision = sum(g$decision == d$decision),
-                 median_min = min(g$median), median_max = max(g$median),
+                 n_reportable_deletions = nrow(rep_g),
+                 n_not_reportable_deletions = nrow(g) - nrow(rep_g),
+                 n_retaining_decision = sum(rep_g$decision == d$decision),
+                 median_min = if (nrow(rep_g)) min(rep_g$median) else NA_real_,
+                 median_max = if (nrow(rep_g)) max(rep_g$median) else NA_real_,
                  stringsAsFactors = FALSE)
     }))
+
+    ## The per-deletion rows themselves, so the exclusions are auditable by name
+    ## rather than only by count.
+    keep_cols <- intersect(
+      c("fit_id", "fit_class", "pathway", "moderator", "coordinate", "drop_sample",
+        "reportable", "k_samples", "median", "hdi_lower", "hdi_upper",
+        "sesoi", "decision"), names(loso))
+    loso_detail <- loso[, keep_cols, drop = FALSE]
+    rownames(loso_detail) <- NULL
   }
 
   ## Prior-grid stability for every slope that reached a decision.
@@ -213,7 +232,8 @@ build_tables <- function(cfg, lock, results, cross_layer, freq, sbc) {
        contrasts = results$contrasts[results$contrasts$fit_class == "stan_primary", ],
        cross_layer = cross_layer, frequentist = freq,
        reportability = lock$reportability, contrast_support = lock$support,
-       stability = stability, prior_stability = prior_stability,
+       stability = stability, loso_detail = loso_detail,
+       prior_stability = prior_stability,
        sbc = sbc$per_parameter, sbc_audit = sbc$audit,
        ppc_overall = results$ppc_overall, ppc_study = results$ppc_study,
        ppc_coordinate = results$ppc_coordinate,
@@ -254,16 +274,26 @@ gate_diagnostic_thresholds <- function(cfg, results) {
   g <- cfg$diagnostics
 
   ## Everything except divergences applies to every fit without exception.
+  ##
+  ## These columns cover the sampled parameters and the deterministic estimands
+  ## only. The `predictive_*` columns are reported alongside but deliberately
+  ## not judged here: a *_new quantity redraws a random effect every iteration,
+  ## so its R-hat measures intended noise. See GATED_PARS in lib_summaries.R.
   other_ok <- d$max_rhat < g$max_rhat & d$min_ess_bulk > g$min_ess_bulk &
     d$min_ess_tail > g$min_ess_tail & d$num_max_treedepth <= g$max_treedepth_hits &
     d$min_ebfmi > g$min_ebfmi
-  if (any(!other_ok))
-    stop(sum(!other_ok), " fits breached a convergence threshold, including: ",
-         paste(utils::head(d$fit_id[!other_ok], 5), collapse = ", "),
-         ". Max R-hat ", signif(max(d$max_rhat), 5),
+  if (any(!other_ok)) {
+    bad <- d[!other_ok, ]
+    stop(nrow(bad), " fits breached a convergence threshold, including: ",
+         paste(utils::head(sprintf("%s (worst R-hat %.4f on %s, min bulk ESS %.0f on %s)",
+                                   bad$fit_id, bad$max_rhat, bad$worst_rhat_variable,
+                                   bad$min_ess_bulk, bad$worst_ess_bulk_variable), 5),
+               collapse = "; "),
+         ". Across all fits: max R-hat ", signif(max(d$max_rhat), 5),
          ", min tail ESS ", signif(min(d$min_ess_tail), 5),
          ", tree-depth hits ", sum(d$num_max_treedepth),
          ", min E-BFMI ", signif(min(d$min_ebfmi), 3), ".")
+  }
 
   ## A reported result must rest on a pristine fit.
   is_primary <- d$fit_class %in% PRIMARY_CLASSES
@@ -372,6 +402,7 @@ promote_run <- function(cfg, analysis_id, data_sha, lock, results, tables,
   w(tables$reportability,   "tables", "reportability.csv")
   w(tables$contrast_support,"tables", "contrast_support.csv")
   w(tables$stability,       "tables", "leave_one_study_out_stability.csv")
+  w(tables$loso_detail,     "tables", "leave_one_study_out_detail.csv")
   w(tables$prior_stability, "tables", "prior_grid_stability.csv")
   w(tables$decided,         "tables", "decisions.csv")
   w(tables$vz_comparison,   "tables", "vz_comparison.csv")

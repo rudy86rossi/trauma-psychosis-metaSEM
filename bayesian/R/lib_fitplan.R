@@ -78,6 +78,14 @@ build_fit_plan <- function(cfg, lock) {
         if (isTRUE(cfg$sensitivity$leave_one_study_out)) {
           present <- df$sample_id[lock$mods[[key]][[m]]$keep]
           for (s in present) {
+            ## Skip a deletion that leaves no contrast to estimate: an empty
+            ## binary arm, or a continuous moderator reduced to one distinct
+            ## value. Such a model has no identified slope, so fitting it would
+            ## spend a chain to produce a number that means nothing. Deletions
+            ## that merely become non-reportable ARE kept: they are legitimate
+            ## estimates, they are labelled as unreportable by moderator_spec(),
+            ## and excluding them silently would hide the fragility.
+            if (!loso_is_estimable(cfg, df, m, s)) next
             add(fit_class = "sens_loso_stan",
                 fit_id = sprintf("loso_stan|%s|%s|%s", key, mname, s),
                 pathway = key, moderator = mname, reportable = status,
@@ -99,6 +107,17 @@ build_fit_plan <- function(cfg, lock) {
   plan$layer <- ifelse(grepl("brms", plan$fit_class), "brms", "stan")
   rownames(plan) <- NULL
   plan
+}
+
+#' Does deleting `sample_id` leave a moderator slope that can be estimated at
+#' all? Distinct from reportability: this is identification, not policy.
+loso_is_estimable <- function(cfg, df, m, sample_id) {
+  v <- df[[m]][df$sample_id != sample_id]
+  v <- v[!is.na(v)]
+  if (length(v) < 2) return(FALSE)
+  if (identical(cfg$moderators[[m]]$kind, "binary"))
+    return(sum(v == 1) >= 1 && sum(v == 0) >= 1)
+  length(unique(v)) >= 2
 }
 
 #' Prior list for a sensitivity variant, on the full-contrast scale.
@@ -125,26 +144,21 @@ drop_one_sample <- function(cfg, lock, key, mod, sample_id) {
 }
 
 #' Rebuild the moderator structures for an arbitrary subset of studies.
+#'
+#' Reportability is RE-DERIVED here, not inherited. Deleting a study can collapse
+#' a binary arm below the minimum (negsch_del by clinical is 3 clinical to 2
+#' non-clinical, so two of its five deletions leave a group of one), and it can
+#' shorten the supported span of a continuous moderator. A refit that is no
+#' longer reportable must not carry a categorical verdict, which is why the
+#' status travels with the structure rather than beside it.
 rebuild_mods <- function(cfg, d) {
   out <- list()
   for (m in MOD_NAMES(cfg)) {
-    mm <- cfg$moderators[[m]]
-    v <- d[[m]]; keep <- !is.na(v)
-    if (identical(mm$kind, "binary")) {
-      spec <- scale_spec(cfg, m, NULL); centre <- 0
-      x <- v; xc <- c(0, 1)
-    } else {
-      rng <- if (any(keep)) range(v[keep]) else unlist(mm$nominal_contrast)
-      nom <- unlist(mm$nominal_contrast)
-      sup <- c(max(nom[1], rng[1]), min(nom[2], rng[2]))
-      if (sup[2] <= sup[1]) sup <- rng
-      spec <- scale_spec(cfg, m, sup)
-      centre <- if (any(keep)) mean(v[keep]) else 0
-      x <- (v - centre) / mm$unit
-      xc <- (c(spec$supported_lo, spec$supported_hi) - centre) / mm$unit
-    }
-    out[[m]] <- list(keep = keep, x = ifelse(is.na(x), 0, x), centre = centre,
-                     unit = mm$unit, xc = xc, spec = spec)
+    ms <- moderator_spec(cfg, d, m)
+    out[[m]] <- ms[c("keep", "x", "centre", "unit", "xc", "spec")]
+    out[[m]]$status <- ms$status
+    out[[m]]$k      <- ms$k
+    out[[m]]$note   <- ms$note
   }
   out
 }
@@ -203,6 +217,12 @@ run_fit <- function(cfg, lock, row) {
 
   spec <- if (is.null(mod)) NULL else mods[[mod]]$spec
 
+  ## Reportability of THIS fit, not of the model it was derived from. For a
+  ## primary fit the two agree by construction; for a deletion or an instrument
+  ## substitution they can differ, and the refit's own status is the honest one.
+  ## row$reportable is retained in the plan as the parent's status.
+  reportable <- if (is.null(mod)) row$reportable else mods[[mod]]$status
+
   ## The studies the model is actually fitted on. A moderator with a missing
   ## value drops its study, so the pathway data frame is not the fitted set.
   ## Summaries and posterior predictive checks must use the fitted set: indexing
@@ -218,7 +238,8 @@ run_fit <- function(cfg, lock, row) {
     dg  <- cbind(data.frame(pathway = key, moderator = row$moderator,
                             fit_class = row$fit_class, variant = row$variant,
                             drop_sample = row$drop_sample,
-                            reportable = row$reportable, stringsAsFactors = FALSE),
+                            reportable = reportable, parent_reportable = row$reportable,
+                            stringsAsFactors = FALSE),
                  brms_diagnostics(fit, row$fit_id))
     slopes <- NULL
     if (!is.null(mod)) {
@@ -234,7 +255,7 @@ run_fit <- function(cfg, lock, row) {
                          coordinate = pr, estimand = "d_z",
                          contrast = contrast_label(spec),
                          span_units = spec$supported_span, clamped = spec$clamped,
-                         reportable = row$reportable, stringsAsFactors = FALSE), s)
+                         reportable = reportable, stringsAsFactors = FALSE), s)
       }))
     }
     draws <- if (identical(row$fit_class, "brms_primary") && !is.null(mod))
@@ -251,7 +272,7 @@ run_fit <- function(cfg, lock, row) {
 
   ex <- extract_stan(cfg, fit, key, mod,
                      spec %||% scale_spec(cfg, MOD_NAMES(cfg)[1]),
-                     df_fit, mods, row$reportable)
+                     df_fit, mods, reportable)
   for (nm in c("slopes", "pooled", "predict", "contrasts")) {
     if (!is.null(ex[[nm]]))
       ex[[nm]] <- cbind(data.frame(fit_id = row$fit_id, fit_class = row$fit_class,
@@ -260,6 +281,7 @@ run_fit <- function(cfg, lock, row) {
   }
   ex$diagnostics <- cbind(data.frame(fit_class = row$fit_class, variant = row$variant,
                                      drop_sample = row$drop_sample,
+                                     parent_reportable = row$reportable,
                                      stringsAsFactors = FALSE), ex$diagnostics)
 
   ## Posterior predictive checks and matched draws, for the primary fits only.

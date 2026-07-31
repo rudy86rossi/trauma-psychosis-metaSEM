@@ -115,10 +115,10 @@ fit_brms_model <- function(cfg, bl, mod, fit_id, priors = NULL, sampling = NULL)
 brms_diagnostics <- function(fit, fit_id) {
   np <- brms::nuts_params(fit)
   sm <- posterior::summarise_draws(as_draws_df(fit),
-                                   "rhat", "ess_bulk", "ess_tail")
+                                   "rhat", "ess_bulk", "ess_tail",
+                                   "mcse_mean", "mcse_sd")
   sm <- sm[!grepl("^(lprior|lp__)$", sm$variable), ]
   md <- fit$fit@sim$control$max_treedepth %||% 12
-  ebfmi <- tryCatch(min(bayesplot::neff_ratio(fit), na.rm = TRUE), error = function(e) NA_real_)
   energy <- np$Value[np$Parameter == "energy__"]
   ## E-BFMI per chain, per Betancourt: mean squared successive difference over
   ## the marginal energy variance.
@@ -128,11 +128,29 @@ brms_diagnostics <- function(fit, fit_id) {
     sum(diff(e)^2) / length(e) / stats::var(e)
   }, numeric(1)))
 
+  ## Same columns as the Stan layer, so the two are comparable rather than
+  ## pooled into one min/max over incomparable parameter sets. brms audits every
+  ## population-level, group-level and scale parameter, which is a WIDER scope
+  ## than the Stan gate; `params_audited` records that on each row so a reader
+  ## can see whose extremum they are looking at.
+  i_rhat <- which.max(replace(sm$rhat, is.na(sm$rhat), -Inf))
+  i_bulk <- which.min(replace(sm$ess_bulk, is.na(sm$ess_bulk), Inf))
+  i_tail <- which.min(replace(sm$ess_tail, is.na(sm$ess_tail), Inf))
+
   data.frame(
     fit_id = fit_id,
     max_rhat = max(sm$rhat, na.rm = TRUE),
     min_ess_bulk = min(sm$ess_bulk, na.rm = TRUE),
     min_ess_tail = min(sm$ess_tail, na.rm = TRUE),
+    max_mcse_mean = max(sm$mcse_mean, na.rm = TRUE),
+    max_mcse_sd = max(sm$mcse_sd, na.rm = TRUE),
+    worst_rhat_variable = sm$variable[i_rhat],
+    worst_ess_bulk_variable = sm$variable[i_bulk],
+    worst_ess_tail_variable = sm$variable[i_tail],
+    n_variables_audited = nrow(sm),
+    params_audited = "all brms parameters except lprior and lp__",
+    predictive_max_rhat = NA_real_,
+    predictive_min_ess_bulk = NA_real_,
     num_divergent = sum(np$Value[np$Parameter == "divergent__"]),
     num_max_treedepth = sum(np$Value[np$Parameter == "treedepth__"] >= md),
     min_ebfmi = ebfmi,

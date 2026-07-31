@@ -62,7 +62,26 @@ test_that("the prior grid varies the scientific scale, not the coefficient scale
 test_that("a clamped contrast is never given the nominal label", {
   expect_equal(contrast_label(scale_spec(CFG, "female", c(52, 60))), "52 to 60")
   expect_equal(contrast_label(scale_spec(CFG, "female")), "40 to 60")
-  expect_equal(contrast_label(scale_spec(CFG, "clinical")), "non-clinical vs clinical")
+})
+
+test_that("the binary contrast label states the subtraction the model computes", {
+  # Not a spelling preference. The model computes d_z = z_pop[NC] - z_pop[1]
+  # over xc = c(0, 1), and lib_data.R codes clinical as 1, so the estimand is
+  # clinical minus non-clinical. A label naming the levels in the opposite order
+  # invites a reader to take the sole reported decision, a negative median, as
+  # the association being STRONGER in clinical samples: the reverse of the
+  # finding. This test fails if the label and the arithmetic ever diverge again.
+  lab <- contrast_label(scale_spec(CFG, "clinical"))
+  expect_equal(lab, "clinical minus non-clinical")
+
+  # The subtraction itself, asserted from the config rather than assumed.
+  xc <- unlist(CFG$moderators$clinical$nominal_contrast)
+  expect_equal(xc, c(0, 1))                    # low = non-clinical, high = clinical
+  expect_match(lab, "^clinical minus")         # high minus low, in that order
+
+  # The continuous branch already writes lo to hi, matching the same
+  # subtraction. The two branches must not use opposite conventions.
+  expect_equal(contrast_label(scale_spec(CFG, "age")), "20 to 30")
 })
 
 test_that("the lock records the clamped contrasts the data actually support", {
@@ -92,4 +111,54 @@ test_that("fit seeds are deterministic and distinct", {
 test_that("a configuration that re-enables Bayes factors is rejected", {
   bad <- CFG; bad$bayes_factors <- TRUE
   expect_error(validate_config(bad), "Bayes factors are removed")
+})
+
+test_that("deleting a study re-derives reportability rather than inheriting it", {
+  # The defect this guards: leave-one-study-out refits took `reportable` from
+  # the parent model. negsch_del by clinical is 3 clinical to 2 non-clinical, so
+  # deleting either non-clinical study leaves a group of one. Under the
+  # project's own rule (binary_min_per_arm = 2) that model must not be reported,
+  # yet it was published as a deletion that "failed to retain" the decision,
+  # contaminating the quoted median range with an estimate the rule forbids.
+  df <- LOCK$analysis$negsch_del
+  parent <- moderator_spec(CFG, df, "clinical")
+  expect_equal(parent$status, "fragile")
+
+  status <- vapply(df$sample_id, function(s) {
+    moderator_spec(CFG, df[df$sample_id != s, , drop = FALSE], "clinical")$status
+  }, character(1))
+
+  # Three deletions remain estimable and reportable, two do not.
+  expect_equal(sum(status != "not reported"), 3L)
+  expect_equal(sum(status == "not reported"), 2L)
+
+  # And the ones that collapse are exactly the non-clinical studies.
+  collapsed <- names(status)[status == "not reported"]
+  expect_true(all(df$clinical[df$sample_id %in% collapsed] == 0))
+
+  # A model that is not reportable must not be granted a categorical verdict.
+  for (s in collapsed) {
+    ms <- moderator_spec(CFG, df[df$sample_id != s, , drop = FALSE], "clinical")
+    expect_false(ms$spec$decision_permitted)
+  }
+})
+
+test_that("a deletion leaving no contrast to estimate is not planned at all", {
+  # dissoc_cps has one clinical sample of four. Deleting it leaves the moderator
+  # constant, so there is no slope to identify. Fitting it would burn a chain to
+  # produce a number with no meaning. Deletions that merely become
+  # NON-REPORTABLE are still planned, because they are legitimate estimates and
+  # dropping them silently would hide the fragility.
+  df <- LOCK$analysis$dissoc_cps
+  clinical_ids <- df$sample_id[df$clinical == 1]
+  expect_length(clinical_ids, 1L)
+
+  expect_false(loso_is_estimable(CFG, df, "clinical", clinical_ids))
+  for (s in setdiff(df$sample_id, clinical_ids))
+    expect_true(loso_is_estimable(CFG, df, "clinical", s))
+
+  # The two non-reportable negsch_del deletions ARE estimable, so they stay.
+  nd <- LOCK$analysis$negsch_del
+  for (s in nd$sample_id)
+    expect_true(loso_is_estimable(CFG, nd, "clinical", s))
 })

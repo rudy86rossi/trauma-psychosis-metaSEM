@@ -119,3 +119,71 @@ test_that("write_canonical is stable under row permutation", {
   write_canonical(d2, f2, c("pathway", "sample_id", "effect_id"))
   expect_equal(sha256_file(f1), sha256_file(f2))
 })
+
+# ---- the independent-sample registry ----------------------------------------
+# Before this existed, `sample_id` was a serial relabelling of
+# paste(studyID, year): samples.csv was written by the lock and never read, so
+# the comment claiming a curated registry defined the analytical unit was false.
+# These tests assert the two things the registry is actually for: structural
+# contradictions stop the build, and judgement calls are surfaced instead.
+
+test_that("the registry owns the identifiers and every effect row is declared", {
+  reg <- read.csv("../../../data/provenance/samples.csv", stringsAsFactors = FALSE,
+                  na.strings = "")
+  expect_true(all(SAMPLE_REGISTRY_COLS %in% names(reg)))
+  expect_setequal(unique(unlist(lapply(LOCK$analysis, `[[`, "sample_id"))),
+                  intersect(reg$sample_id, unlist(lapply(LOCK$analysis, `[[`, "sample_id"))))
+  # No effect row may reach the analysis without a declared sample.
+  expect_false(anyNA(LOCK$effects$sample_id))
+})
+
+test_that("one sample cannot carry two participant counts", {
+  # The previous code took whichever row came first, so a genuine disagreement
+  # between two workbooks about the same cohort was resolved by row order. That
+  # is a contradiction in the data, not a judgement call, so it must be fatal.
+  ALL <- do.call(rbind, LOCK$analysis)
+  ALL$analysis_role <- "primary"; ALL$excluded <- FALSE
+  bad <- ALL
+  bad$n[nrow(bad)] <- bad$n[nrow(bad)] + 1
+  bad$sample_key[nrow(bad)] <- bad$sample_key[1]
+  bad$n[1] <- bad$n[nrow(bad)] - 1
+  expect_error(build_sample_registry(bad, tempfile()),
+               "more than one participant count")
+})
+
+test_that("a verified sample must name who verified it", {
+  ALL <- do.call(rbind, LOCK$analysis)
+  ALL$analysis_role <- "primary"; ALL$excluded <- FALSE
+  reg <- LOCK$samples
+  reg$verification_status[1] <- "verified"      # but no verified_by / verified_date
+  p <- tempfile(fileext = ".csv")
+  write.csv(reg, p, row.names = FALSE, na = "")
+  expect_error(build_sample_registry(ALL, p), "without verified_by")
+
+  # With attribution it passes.
+  reg$verified_by <- "test"; reg$verified_date <- "2026-07-31"
+  write.csv(reg, p, row.names = FALSE, na = "")
+  expect_silent(invisible(build_sample_registry(ALL, p)))
+})
+
+test_that("an undeclared sample stops the build rather than being invented", {
+  ALL <- do.call(rbind, LOCK$analysis)
+  ALL$analysis_role <- "primary"; ALL$excluded <- FALSE
+  p <- tempfile(fileext = ".csv")
+  write.csv(LOCK$samples[-1, ], p, row.names = FALSE, na = "")
+  expect_error(build_sample_registry(ALL, p), "map to no declared sample_id")
+})
+
+test_that("the review queue names judgement calls without stopping the build", {
+  q <- LOCK$review_queue
+  expect_true(is.data.frame(q) && nrow(q) > 0)
+  expect_true(all(c("sample_key", "issue", "detail", "question") %in% names(q)))
+  # The one genuine cross-workbook case must be raised: Gibson 2019 supplies
+  # both a dissociation and a negative-schema triplet, and only a human with the
+  # papers can say whether those are the same participants.
+  spans <- q[q$issue == "spans more than one source workbook", ]
+  expect_true("Gibson 2019" %in% spans$sample_key)
+  # Labels that will not round-trip cleanly are flagged, because a punctuation
+  # difference is exactly how one cohort silently becomes two.
+  expect_true(any(grepl("punctuation", q$issue)))
+})

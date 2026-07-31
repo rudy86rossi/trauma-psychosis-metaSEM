@@ -10,8 +10,15 @@
 # instruments are never averaged, because an average describes no defined
 # construct and conceals the dependence induced by shared participants.
 #
-# `paste(studyID, year)` is used only to WARN about probable duplicates. The
-# analytical unit is defined by the curated sample registry.
+# `paste(studyID, year)` is the sample KEY: it is what groups effect rows into
+# an independent sample, and it is a heuristic. It cannot separate two cohorts
+# published by one author in one year, and it cannot recognise one cohort
+# appearing under two labels. data/provenance/samples.csv reconciles that key
+# with stable identifiers, enforces the invariants the key cannot (see
+# build_sample_registry), and raises the cases only a human can settle in
+# sample_review_queue.csv. Every row there is currently `derived_unverified`,
+# so the analytical unit is derived and not yet externally verified. Nothing in
+# this release may describe it otherwise until an author signs it off.
 # =============================================================================
 
 suppressPackageStartupMessages({
@@ -185,8 +192,12 @@ apply_registry <- function(cfg, df) {
          paste(paste(df$studyID[npd], df$year[npd]), collapse = ", "),
          ". Add to EXCLUSIONS with a documented reason before proceeding.")
 
-  ## Sample identity. author + year is a DUPLICATE DETECTOR, not the unit: it
-  ## flags rows for the registry rather than defining independence itself.
+  ## Sample identity. author + year IS the grouping key, and it is a heuristic:
+  ## rows sharing it are treated as one sample and reconciled against the
+  ## registry, which enforces the invariants this key cannot and refers the rest
+  ## to review. Two rows sharing a key within one pathway are resolved below by
+  ## instrument priority, on the assumption that they are two measurements of
+  ## one sample; build_sample_registry() raises if that assumption cannot hold.
   df$sample_key <- paste(df$studyID, df$year)
   dup <- df$sample_key[duplicated(df$sample_key) & !df$excluded]
   if (length(dup))

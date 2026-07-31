@@ -122,14 +122,68 @@ compare_posteriors <- function(x, y, labels = c("stan", "brms"), prob = 0.95) {
 
 ## ---- diagnostics ------------------------------------------------------------
 
+## Which variables the convergence gate is entitled to judge.
+##
+## GATED: every sampled parameter, plus the deterministic estimands the results
+## are read off. A conclusion rests on d_z and on the pooled mediation
+## quantities, so an R-hat that never looked at them is not evidence that the
+## conclusion converged. The earlier default of alpha, tau and lp__ omitted
+## beta, the study effects and d_z, which is to say it omitted the parameter the
+## sole decision was made on.
+##
+## NOT GATED: the `*_new` predictive quantities. Each draw adds a fresh
+## normal_rng(0, tau) random effect, so their between-chain variance contains
+## deliberate Monte Carlo noise that has nothing to do with whether the sampler
+## converged. Gating them would manufacture failures that mean nothing. They are
+## summarised and reported, in their own columns, so the distinction is visible
+## rather than implicit.
+GATED_PARS   <- c("alpha", "beta", "tau", "u", "d_z",
+                  "a_pop", "b_pop", "cprime_pop", "ind_pop", "total_pop",
+                  "d_a", "d_b", "d_cprime", "d_ind", "d_total",
+                  "ind_study_mean", "lp__")
+STOCHASTIC_PARS <- c("a_new", "b_new", "cprime_new", "ind_new", "total_new")
+
+#' Convergence and sampler diagnostics for one Stan fit.
+#'
+#' `pmed_pop` is deliberately absent from the gate: it is a ratio whose
+#' denominator can approach zero, so its R-hat and ESS are dominated by the tail
+#' behaviour of the estimand rather than by sampler performance. It is reported
+#' with the other pooled quantities and flagged uninterpretable where the total
+#' effect includes zero.
 fit_diagnostics <- function(fit, fit_id, cfg, pars = NULL) {
   ds <- fit$diagnostic_summary(quiet = TRUE)
-  sm <- fit$summary(variables = pars %||% c("alpha", "tau", "lp__"))
+
+  gated <- pars %||% GATED_PARS
+  gated <- gated[gated %in% c(fit$metadata()$stan_variables, "lp__")]
+  sm <- fit$summary(variables = gated,
+                    "rhat", "ess_bulk", "ess_tail", "mcse_mean", "mcse_sd")
+
+  ## Name the offending variable. An anonymous extremum cannot be investigated,
+  ## and "max R-hat 1.004" tells a reader nothing about whether it sat on a
+  ## nuisance parameter or on the reported contrast.
+  i_rhat <- which.max(replace(sm$rhat, is.na(sm$rhat), -Inf))
+  i_bulk <- which.min(replace(sm$ess_bulk, is.na(sm$ess_bulk), Inf))
+  i_tail <- which.min(replace(sm$ess_tail, is.na(sm$ess_tail), Inf))
+
+  stoch <- STOCHASTIC_PARS[STOCHASTIC_PARS %in% fit$metadata()$stan_variables]
+  sn <- if (length(stoch))
+    fit$summary(variables = stoch, "rhat", "ess_bulk") else NULL
+
   data.frame(
     fit_id = fit_id,
     max_rhat = max(sm$rhat, na.rm = TRUE),
     min_ess_bulk = min(sm$ess_bulk, na.rm = TRUE),
     min_ess_tail = min(sm$ess_tail, na.rm = TRUE),
+    max_mcse_mean = max(sm$mcse_mean, na.rm = TRUE),
+    max_mcse_sd = max(sm$mcse_sd, na.rm = TRUE),
+    worst_rhat_variable = sm$variable[i_rhat],
+    worst_ess_bulk_variable = sm$variable[i_bulk],
+    worst_ess_tail_variable = sm$variable[i_tail],
+    n_variables_audited = nrow(sm),
+    params_audited = paste(gated, collapse = " "),
+    ## Reported, never gated. See the comment on STOCHASTIC_PARS.
+    predictive_max_rhat = if (is.null(sn)) NA_real_ else max(sn$rhat, na.rm = TRUE),
+    predictive_min_ess_bulk = if (is.null(sn)) NA_real_ else min(sn$ess_bulk, na.rm = TRUE),
     num_divergent = sum(ds$num_divergent),
     num_max_treedepth = sum(ds$num_max_treedepth),
     min_ebfmi = min(ds$ebfmi, na.rm = TRUE),
