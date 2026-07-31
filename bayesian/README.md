@@ -9,6 +9,20 @@ disagreement with the posterior.
 
 ## Restoring and running
 
+Use plain `Rscript`, never `Rscript --vanilla`. `--vanilla` skips `.Rprofile`,
+which is what runs `renv/activate.R`, so the commands would execute against
+whatever happens to be in the global library rather than the locked one. Every
+command here was previously documented with `--vanilla`, and the project library
+had in fact never been restored.
+
+On Debian or Ubuntu install the system libraries the locked packages link
+against first, or `igraph` installs and then fails to load:
+
+```sh
+sudo apt install libglpk-dev libfontconfig1-dev libfreetype6-dev libpng-dev \
+                 libharfbuzz-dev libfribidi-dev pandoc
+```
+
 ```sh
 # 1. R packages
 Rscript -e 'renv::restore(prompt = FALSE)'

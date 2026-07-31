@@ -11,8 +11,17 @@ bayesian/stan/*.exe
 bayesian/stan/*.o
 bayesian/stan/*.hpp
 
-# Full posterior draws and fitted objects. Deposited externally with checksums
-# recorded in the run manifest; they must not enter the public tree.
+# Full posterior draws and fitted objects. These are NOT deposited anywhere: no
+# archive location or checksum exists, and an earlier version of this file
+# claimed otherwise. Exact verification of the reported diagnostics therefore
+# requires rerunning the models from the pinned environment, which the fit
+# ledger's per-fit seeds make deterministic. Depositing them is an open item in
+# the pull request.
+#
+# What IS committed, because it is small enough to version, is the complete SBC
+# record: diagnostics/sbc_ranks_raw.csv carries every truth, rank and
+# per-replicate diagnostic, so the calibration audit can be recomputed exactly
+# without refitting 600 models.
 *.rds
 *.csv.gz
 

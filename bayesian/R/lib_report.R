@@ -413,6 +413,16 @@ promote_run <- function(cfg, analysis_id, data_sha, lock, results, tables,
     write.csv(x, file.path(staging, sub, name), row.names = FALSE, na = "")
   }
 
+  ## Machine-readable record of the environment the numbers came off, so a
+  ## reproduction attempt can diff package versions rather than guess.
+  w(tryCatch({
+      lk <- renv::lockfile_read(file.path(root, "renv.lock"))$Packages
+      data.frame(package = names(lk),
+                 version = vapply(lk, function(p) p$Version %||% NA_character_, character(1)),
+                 source  = vapply(lk, function(p) p$Source %||% NA_character_, character(1)),
+                 stringsAsFactors = FALSE)
+    }, error = function(e) NULL), "diagnostics", "package_inventory.csv")
+
   w(tables$headline,        "tables", "headline_counts.csv")
   w(tables$slopes,          "tables", "moderator_contrasts.csv")
   w(tables$slopes_all,      "tables", "moderator_contrasts_all_estimands.csv")
@@ -464,6 +474,14 @@ promote_run <- function(cfg, analysis_id, data_sha, lock, results, tables,
     renv_sha256 = sha256_file(file.path(root, "renv.lock")),
     r_version = R.version.string,
     cmdstan_version = tryCatch(cmdstanr::cmdstan_version(), error = function(e) NA),
+    ## The machine the numbers came off. Without this a reader attempting to
+    ## reproduce the run cannot tell whether a small numerical difference is
+    ## their platform or a real disagreement. No absolute paths are recorded.
+    os = paste(Sys.info()[["sysname"]], Sys.info()[["release"]]),
+    arch = R.version$arch,
+    compiler = tryCatch(
+      sub("\\s+$", "", system2(Sys.getenv("CXX", "c++"), "--version", stdout = TRUE)[1]),
+      error = function(e) NA_character_, warning = function(w) NA_character_),
     generated = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"),
     file = sub(paste0("^", staging, "/"), "", files),
     sha256 = vapply(files, sha256_file, character(1)),
