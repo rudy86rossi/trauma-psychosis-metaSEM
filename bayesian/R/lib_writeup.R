@@ -34,13 +34,20 @@ read_run <- function(run_dir) {
     reportability = rd("tables", "reportability.csv"),
     support     = rd("tables", "contrast_support.csv"),
     stability   = rd("tables", "leave_one_study_out_stability.csv"),
+    loso_detail = rd("tables", "leave_one_study_out_detail.csv"),
+    targeted    = rd("tables", "targeted_sensitivity.csv"),
     prior_stab  = rd("tables", "prior_grid_stability.csv"),
     decided     = rd("tables", "decisions.csv"),
     vz          = rd("tables", "vz_comparison.csv"),
+    heterogeneity = rd("tables", "heterogeneity.csv"),
+    prior_predictive = rd("tables", "prior_predictive.csv"),
+    prior_predictive_verdict = rd("tables", "prior_predictive_verdict.csv"),
     diagnostics = rd("diagnostics", "fit_diagnostics.csv"),
     ledger      = rd("diagnostics", "fit_ledger.csv"),
+    power_scaling = rd("diagnostics", "power_scaling.csv"),
     sbc         = rd("diagnostics", "sbc_rank_uniformity.csv"),
     sbc_audit   = rd("diagnostics", "sbc_audit.csv"),
+    sbc_by_scenario = rd("diagnostics", "sbc_by_scenario.csv"),
     ppc_overall = rd("diagnostics", "ppc_overall.csv"),
     divergence  = rd("diagnostics", "divergence_policy.csv"),
     ppc_study   = rd("diagnostics", "ppc_study.csv"),
@@ -239,21 +246,43 @@ write_results_doc <- function(R, cfg, lock, path) {
   add("## 5. Robustness of any decision reached", "")
   if (!is.null(R$stability) && nrow(R$stability)) {
     add("Leave-one-study-out, for every slope that reached a decision:", "")
+    ## Reportability is recomputed after each deletion, not inherited. Deleting a
+    ## study can collapse a binary arm below the project's own minimum, and such
+    ## a refit is not evidence about robustness: it is a model the rule forbids
+    ## reporting. It is counted separately and excluded from the median range.
     add(md_table(data.frame(
       Pathway = PATHWAY_PROSE[R$stability$pathway], Moderator = R$stability$moderator,
       Coordinate = COORD_PROSE[R$stability$coordinate],
       Deletions = R$stability$n_deletions,
+      Reportable = R$stability$n_reportable_deletions,
       `Retaining the decision` = R$stability$n_retaining_decision,
-      `Median range` = sprintf("%s to %s", fmt(R$stability$median_min),
-                               fmt(R$stability$median_max)),
+      `Median range (reportable)` = sprintf("%s to %s", fmt(R$stability$median_min),
+                                            fmt(R$stability$median_max)),
       check.names = FALSE, stringsAsFactors = FALSE)), "")
-    frag <- R$stability[R$stability$n_retaining_decision < R$stability$n_deletions, ]
+    nnr <- sum(R$stability$n_not_reportable_deletions)
+    if (nnr)
+      add("", sprintf(paste("%d deletion(s) left a group below the minimum per arm and are",
+                            "therefore **not reportable**. They are excluded from the counts and",
+                            "the median range above, and named in",
+                            "`tables/leave_one_study_out_detail.csv`. Counting them would treat",
+                            "an estimate the project's own rule forbids reporting as evidence",
+                            "about the decision's robustness."), nnr), "")
+    frag <- R$stability[R$stability$n_retaining_decision < R$stability$n_reportable_deletions, ]
     if (nrow(frag))
-      add("", paste("Where a decision does not survive every single-study deletion, the correct",
-                    "statement is that **the interval decision is not leave-one-study-out robust**.",
-                    "That is weaker than saying the direction is unidentified: the point estimates",
-                    "may remain consistent in sign while the interval crosses the decision",
-                    "boundary."), "")
+      add("", paste("Where a decision does not survive every reportable single-study deletion, the",
+                    "correct statement is that **the interval decision is not leave-one-study-out",
+                    "robust**. That is weaker than saying the direction is unidentified: the point",
+                    "estimates may remain consistent in sign while the interval crosses the",
+                    "decision boundary."), "")
+    if (!is.null(R$targeted) && nrow(R$targeted))
+      add("", sprintf(paste("Because a categorical decision can flip when an interval endpoint moves",
+                            "by less than a thousandth, `tables/targeted_sensitivity.csv` gives every",
+                            "one of the %d fits of the contrast(s) that reached a decision: both",
+                            "layers, every prior variant, both sampling-covariance constructions,",
+                            "the robust likelihood and every deletion, each with its own",
+                            "reportability and its interval's distance from the threshold. A",
+                            "variant that changed label without meaningfully changing the estimate",
+                            "is visible there as such."), nrow(R$targeted)), "")
   } else {
     add("No slope reached a decision, so there is no decision whose robustness to test.", "")
     add(paste("The leave-one-study-out and prior-grid refits were nevertheless run for every",
