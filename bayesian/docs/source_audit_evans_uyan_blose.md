@@ -32,7 +32,10 @@ If a publication reports several trauma subscales from the same participants, th
 
 ### Source
 
-[Evans et al. (2015), *Trauma and psychosis: The mediating role of self-concept clarity and dissociation*](../literature/Evans%20et%20al%202015.pdf)
+Evans, G. J., Reid, G., Preston, P., Palmier-Claus, J., & Sellwood, W. (2015).
+*Trauma and psychosis: The mediating role of self-concept clarity and dissociation.*
+Psychiatry Research, 228, 626-632.
+[doi:10.1016/j.psychres.2015.04.053](https://doi.org/10.1016/j.psychres.2015.04.053)
 
 ### Sample and outcome
 
@@ -63,7 +66,10 @@ It may be reconsidered only if participant-level data or a complete commensurate
 
 ### Source
 
-[Uyan et al. (2022), *Relationships between childhood trauma and dissociative, psychotic symptoms in patients with schizophrenia: a case-control study*](../literature/Uyan%20-%202022%20-%20Relationships%20between%20childhood%20trauma%20and%20dissociative%20%20psychotic%20symptoms%20in%20patients.pdf)
+Uyan, T. T., Baltacioglu, M., & Hocaoglu, C. (2022).
+*Relationships between childhood trauma and dissociative, psychotic symptoms in patients
+with schizophrenia: a case-control study.* General Psychiatry.
+[doi:10.1136/gpsych-2021-100659](https://doi.org/10.1136/gpsych-2021-100659)
 
 ### Two distinct analytical samples and estimands
 
@@ -95,7 +101,10 @@ The \(N=200\) case-control mediation coefficients must not be substituted, trans
 
 ### Source
 
-[Blose et al. (2023), *The indirect effect of peritraumatic dissociation on the relationship between childhood maltreatment and schizotypy*](../literature/Blose%20et%20al%20-%202022%20The-indirect-effect-of-peritraumatic-dissociation-on-the-relationship-between-childhood-maltreatment.pdf)
+Blose, B. A., Godleski, S. A., Houston, R. J., & Schenkel, L. S. (2023).
+*The indirect effect of peritraumatic dissociation on the relationship between childhood
+maltreatment and schizotypy.* Journal of Interpersonal Violence.
+[doi:10.1177/08862605221122832](https://doi.org/10.1177/08862605221122832)
 
 ### Sample
 
