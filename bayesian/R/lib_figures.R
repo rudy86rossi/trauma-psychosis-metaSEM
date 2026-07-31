@@ -23,17 +23,47 @@ COORD_LABELS <- c(r_XM = "r(trauma, mediator)",
 
 REPORT_COLOURS <- c(ok = "#1B4965", fragile = "#C77D24", `not reported` = "#9AA0A6")
 
-theme_release <- function(base_size = 10) {
+theme_release <- function(base_size = 9) {
   theme_minimal(base_size = base_size) +
     theme(panel.grid.minor = element_blank(),
           strip.text = element_text(face = "bold", size = base_size - 1),
+          ## Right-hand strips are rotated 90 degrees by default, so a long
+          ## facet label is clipped to a fragment: the released figure 1 read
+          ## "ale (per 10 percentage po" and "lamped amped". Horizontal text
+          ## with a wrapped label is legible and cannot be silently truncated.
+          strip.text.y.right = element_text(angle = 0, hjust = 0),
+          panel.spacing.x = unit(1.1, "lines"),
           legend.position = "bottom",
-          plot.caption = element_text(hjust = 0, colour = "grey30", size = base_size - 2))
+          legend.box = "vertical",
+          legend.margin = margin(0, 0, 0, 0),
+          plot.caption = element_text(hjust = 0, colour = "grey30", size = base_size - 2),
+          plot.caption.position = "plot",
+          plot.margin = margin(6, 14, 6, 6))
 }
+
+#' Hard-wrap a caption.
+#'
+#' ggplot does not wrap captions, so a long one runs off the canvas and is lost
+#' at the device edge. The released figure 1 caption ended mid-sentence at
+#' "so a", with the remainder simply absent.
+wrap_caption <- function(..., width = 118) {
+  paste(vapply(c(...), function(s)
+    paste(strwrap(s, width = width), collapse = "\n"), character(1)),
+    collapse = "\n")
+}
+
+#' Fewer, rounder x-axis breaks.
+#'
+#' Adjacent free-scale facets each drew their own labels at the panel edges, so
+#' "-0.50" and "0.50" collided into "-0.50.50" between every pair of columns.
+x_breaks <- function(n = 4) function(lim) pretty(lim, n = n)
 
 #' Save one figure in both formats. PDF is the artefact of record; the PNG is
 #' for convenience and is written at 300 dpi, not screen resolution.
-save_figure <- function(p, dir, name, width = 9, height = 6.5) {
+#'
+#' Default width is a manuscript double-column measure rather than an arbitrary
+#' nine inches, so labels are sized as they will be printed.
+save_figure <- function(p, dir, name, width = 8.5, height = 5) {
   ggsave(file.path(dir, paste0(name, ".pdf")), p, width = width, height = height,
          device = grDevices::cairo_pdf)
   ggsave(file.path(dir, paste0(name, ".png")), p, width = width, height = height,
@@ -53,34 +83,50 @@ make_figures <- function(cfg, tables, dir) {
   s$layer <- ifelse(s$fit_class == "stan_primary",
                     "Primary (valid-correlation)", "Reference (brms)")
   ## The contrast actually estimated, never the nominal label when they differ.
-  s$panel <- sprintf("%s\n%s", s$moderator_label,
-                     ifelse(s$clamped, paste0(s$contrast, " (clamped to support)"),
-                            s$contrast))
+  ## The moderator name is NOT repeated here: it is the subtitle of the file
+  ## this panel appears in, and repeating it made the strip label three wrapped
+  ## lines deep, which overflowed the row and clipped "(clamped to support)".
+  s$panel <- ifelse(s$clamped, paste0(s$contrast, "\n(clamped to support)"), s$contrast)
 
-  cap_sesoi <- paste0(
-    "Null interval scaled to the contrast actually estimated: ",
-    "0.05 Fisher-z across the nominal contrast, held at a constant per-unit ",
-    "threshold, so a clamped contrast is not granted a looser test.")
+  cap_sesoi <- paste(
+    "Shaded band is the null interval, scaled to the contrast actually estimated:",
+    "0.05 Fisher-z across the nominal contrast, held at a constant per-unit threshold,",
+    "so a clamped contrast is not granted a looser test. Both layers are shown on the",
+    "same estimand. A negative value for sample type means the correlation is lower in",
+    "clinical samples.")
 
   # --- Figure 1: full-contrast change in each zero-order coordinate ----------
-  f1 <- ggplot(s, aes(x = median, y = pathway_label, colour = reportable)) +
-    geom_vline(xintercept = 0, colour = "grey55", linewidth = 0.3) +
-    geom_rect(aes(xmin = -sesoi, xmax = sesoi, ymin = -Inf, ymax = Inf),
-              fill = "grey92", colour = NA, alpha = 0.35, inherit.aes = FALSE,
-              data = unique(s[!is.na(s$sesoi), c("panel", "sesoi")])) +
-    geom_linerange(aes(xmin = hdi_lower, xmax = hdi_upper),
-                   position = position_dodge(width = 0.55), linewidth = 0.5) +
-    geom_point(aes(shape = layer), position = position_dodge(width = 0.55), size = 1.7) +
-    facet_grid(panel ~ coordinate_label, scales = "free_y", space = "free_y") +
-    scale_colour_manual(values = REPORT_COLOURS, drop = FALSE, name = "Reportability") +
-    scale_shape_manual(values = c(16, 1), name = "Model layer") +
-    labs(x = "Change in Fisher-z across the estimated contrast (95% HDI)", y = NULL,
-         title = "Moderation as a full-contrast change in each zero-order correlation",
-         caption = paste(cap_sesoi,
-                         "Shaded band is the null interval. Both layers are shown on the same estimand.",
-                         sep = "\n")) +
-    theme_release()
-  save_figure(f1, dir, "fig1_moderator_contrasts", height = 11)
+  #
+  # One file per moderator. The combined version was 9 by 11 inches with four
+  # moderators stacked, which is unusable at manuscript size and was the reason
+  # its facet labels were clipped. Each moderator is a self-contained panel that
+  # can be placed, or dropped, on its own.
+  fig1_panel <- function(d, subtitle, cap) {
+    ggplot(d, aes(x = median, y = pathway_label, colour = reportable)) +
+      geom_vline(xintercept = 0, colour = "grey55", linewidth = 0.3) +
+      geom_rect(aes(xmin = -sesoi, xmax = sesoi, ymin = -Inf, ymax = Inf),
+                fill = "grey92", colour = NA, alpha = 0.35, inherit.aes = FALSE,
+                data = unique(d[!is.na(d$sesoi), c("panel", "sesoi")])) +
+      geom_linerange(aes(xmin = hdi_lower, xmax = hdi_upper),
+                     position = position_dodge(width = 0.55), linewidth = 0.5) +
+      geom_point(aes(shape = layer), position = position_dodge(width = 0.55), size = 1.7) +
+      facet_grid(panel ~ coordinate_label, scales = "free_y", space = "free_y",
+                 labeller = labeller(panel = label_wrap_gen(18))) +
+      scale_x_continuous(breaks = x_breaks(4), expand = expansion(mult = 0.08)) +
+      scale_colour_manual(values = REPORT_COLOURS, drop = FALSE, name = "Reportability") +
+      scale_shape_manual(values = c(16, 1), name = "Model layer") +
+      labs(x = "Change in Fisher-z across the estimated contrast (95% HDI)", y = NULL,
+           title = "Moderation as a full-contrast change in each zero-order correlation",
+           subtitle = subtitle, caption = wrap_caption(cap)) +
+      theme_release()
+  }
+
+  for (m in unique(s$moderator)) {
+    d <- s[s$moderator == m, ]
+    h <- 2.4 + 0.34 * length(unique(paste(d$panel, d$pathway_label)))
+    save_figure(fig1_panel(d, unique(d$moderator_label)[1], cap_sesoi),
+                dir, paste0("fig1_moderator_contrasts_", m), height = h)
+  }
 
   # --- Figure 2: pooled mediation quantities ---------------------------------
   p <- tables$pooled[tables$pooled$moderator == "null" &
@@ -95,11 +141,15 @@ make_figures <- function(cfg, tables, dir) {
       geom_linerange(aes(xmin = q_lo, xmax = q_hi), linewidth = 0.5, colour = "#1B4965") +
       geom_point(size = 1.9, colour = "#1B4965") +
       facet_wrap(~ quantity, nrow = 1, scales = "free_x") +
-      labs(x = "Standardised coefficient (95% credible interval)", y = NULL,
+      scale_x_continuous(breaks = x_breaks(3), expand = expansion(mult = 0.12)) +
+      labs(x = "Standardised coefficient (95% equal-tailed credible interval)", y = NULL,
            title = "Pooled mediation quantities, unmoderated models",
-           caption = "Population-average quantities from the primary valid-correlation model.") +
+           caption = wrap_caption(paste(
+             "Population-average quantities from the primary valid-correlation model.",
+             "Intervals are equal-tailed; one highest-density interval includes zero where",
+             "the equal-tailed interval does not, so the convention is stated."))) +
       theme_release()
-    save_figure(f2, dir, "fig2_pooled_quantities", height = 4.5)
+    save_figure(f2, dir, "fig2_pooled_quantities", height = 3.6)
   }
 
   # --- Figure 3: new-study prediction intervals for the indirect effect ------
@@ -114,13 +164,17 @@ make_figures <- function(cfg, tables, dir) {
       scale_colour_manual(values = c(`TRUE` = "#9AA0A6", `FALSE` = "#1B4965"),
                           labels = c(`TRUE` = "includes zero", `FALSE` = "excludes zero"),
                           name = NULL) +
-      labs(x = "Indirect effect ab in a new study (95% prediction interval)", y = NULL,
+      labs(x = "Latent true indirect effect ab in a new study (95% prediction interval)", y = NULL,
            title = "What to expect in a new study",
-           caption = paste("Prediction intervals describe a future study, not the pooled mean.",
-                           "Their exact width is prior-informed because heterogeneity is weakly identified at this k.",
-                           sep = "\n")) +
+           caption = wrap_caption(paste(
+             "Intervals are for the LATENT TRUE indirect effect in a new study drawn from the",
+             "estimated population; they do not add the sampling error a future observed",
+             "estimate would also carry, so a realised estimate would scatter more widely.",
+             "Their width is driven entirely by the between-study heterogeneity tau, which is",
+             "weakly identified at this number of studies and therefore substantially",
+             "prior-informed."))) +
       theme_release()
-    save_figure(f3, dir, "fig3_prediction_intervals", height = 4.5)
+    save_figure(f3, dir, "fig3_prediction_intervals", height = 3.6)
   }
 
   # --- Figure 4: posterior predictive check, both replication forms ----------
@@ -136,19 +190,31 @@ make_figures <- function(cfg, tables, dir) {
       data.frame(cc[, c("pathway_label", "coordinate_label", "study", "z_observed")],
                  kind = "New study (fresh random effects)",
                  lo = cc$new_lo, hi = cc$new_hi, mid = cc$new_median))
-    f4 <- ggplot(long, aes(y = study)) +
-      geom_linerange(aes(xmin = lo, xmax = hi, colour = kind),
-                     position = position_dodge(width = 0.6), linewidth = 0.5) +
-      geom_point(aes(x = z_observed), shape = 4, size = 1.6, colour = "black") +
-      facet_grid(pathway_label ~ coordinate_label, scales = "free_y", space = "free_y") +
-      scale_colour_manual(values = c("#1B4965", "#C77D24"), name = NULL) +
-      labs(x = "Fisher-z", y = NULL,
-           title = "Posterior predictive check: observed values against both replication forms",
-           caption = paste("Crosses are observed values; bars are 95% replicated intervals.",
-                           "Conditional replication can look satisfactory because study effects absorb an outlier, so both are shown.",
-                           sep = "\n")) +
-      theme_release()
-    save_figure(f4, dir, "fig4_posterior_predictive", height = 13)
+    ## One file per pathway. The combined sheet was 9 by 13 inches, which no
+    ## journal will set, and its facet labels were truncated for the same reason
+    ## as figure 1.
+    cap4 <- paste(
+      "Crosses are observed values; bars are 95% replicated intervals. Both forms are shown",
+      "because a conditional check alone can look satisfactory simply because the study",
+      "effects have absorbed an outlying study. Complete coverage is a weak result at this",
+      "number of studies and does not demonstrate predictive calibration.")
+    for (pl in unique(long$pathway_label)) {
+      d <- long[long$pathway_label == pl, ]
+      f4 <- ggplot(d, aes(y = study)) +
+        geom_linerange(aes(xmin = lo, xmax = hi, colour = kind),
+                       position = position_dodge(width = 0.6), linewidth = 0.5) +
+        geom_point(aes(x = z_observed), shape = 4, size = 1.6, colour = "black") +
+        facet_wrap(~ coordinate_label, nrow = 1) +
+        scale_x_continuous(breaks = x_breaks(3), expand = expansion(mult = 0.1)) +
+        scale_colour_manual(values = c("#1B4965", "#C77D24"), name = NULL) +
+        labs(x = "Fisher-z", y = NULL,
+             title = "Posterior predictive check: both replication forms",
+             subtitle = pl, caption = wrap_caption(cap4)) +
+        theme_release()
+      save_figure(f4, dir, paste0("fig4_posterior_predictive_",
+                                  names(PATH_LABELS)[match(pl, PATH_LABELS)]),
+                  height = 1.9 + 0.22 * length(unique(d$study)))
+    }
   }
 
   # --- Figure 5: SBC rank uniformity ----------------------------------------

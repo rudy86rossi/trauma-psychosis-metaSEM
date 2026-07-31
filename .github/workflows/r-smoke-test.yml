@@ -44,25 +44,52 @@ jobs:
           path: ~/.cmdstan
           key: cmdstan-${{ runner.os }}-${{ env.CMDSTAN_VERSION }}
 
+      # cmdstan_version(error_on_NA = FALSE) returns NULL when CmdStan is absent,
+      # and `NULL %in% x` is logical(0), so the previous one-liner failed with
+      # "argument is of length zero" on any runner without a cache hit. It had
+      # never executed, because renv::restore() aborted before reaching it.
       - name: Install and verify the pinned CmdStan
         run: |
-          Rscript -e 'if (!cmdstanr::cmdstan_version(error_on_NA = FALSE) %in% Sys.getenv("CMDSTAN_VERSION")) cmdstanr::install_cmdstan(version = Sys.getenv("CMDSTAN_VERSION"), cores = 2)'
-          Rscript -e 'stopifnot(identical(cmdstanr::cmdstan_version(), Sys.getenv("CMDSTAN_VERSION")))'
+          Rscript -e '
+            want <- Sys.getenv("CMDSTAN_VERSION")
+            have <- tryCatch(cmdstanr::cmdstan_version(error_on_NA = FALSE),
+                             error = function(e) NULL)
+            if (!isTRUE(identical(have, want)))
+              cmdstanr::install_cmdstan(version = want, cores = 2, overwrite = TRUE)
+            got <- cmdstanr::cmdstan_version()
+            if (!identical(got, want))
+              stop("CmdStan version is ", got, ", expected ", want)
+            cat("CmdStan", got, "ready\n")'
 
       # An ASSERTION, not a report. renv::status() returns normally whatever it
       # finds, so calling it alone turned a broken environment into green text.
       # Only the library-versus-lockfile relationship is asserted: renv's `used`
       # column is a static scan of source files and reports Suggests-only
       # packages as unused, which is not a synchronisation failure.
+      # Asserted directly against the lockfile rather than through
+      # renv::status()$synchronized. The status object's shape varies by renv
+      # version, so a check written against fields that may not exist would pass
+      # vacuously, which is the same failure mode as printing the result and
+      # ignoring it. Only installed-versus-recorded is asserted: renv's `used`
+      # column is a static source scan and reports Suggests-only packages as
+      # unused, which is not a synchronisation failure.
       - name: Locked environment matches the lockfile
         run: |
           Rscript -e '
-            s <- renv::status()
-            bad <- c(s$missing$Package, s$out_of_sync$Package)
+            lock <- renv::lockfile_read("renv.lock")$Packages
+            inst <- as.data.frame(installed.packages()[, c("Package", "Version")],
+                                  stringsAsFactors = FALSE)
+            bad <- character(0)
+            for (p in names(lock)) {
+              i <- inst$Version[inst$Package == p]
+              if (!length(i)) bad <- c(bad, paste0(p, " (not installed)"))
+              else if (!identical(i[1], lock[[p]]$Version))
+                bad <- c(bad, sprintf("%s (have %s, lockfile %s)", p, i[1], lock[[p]]$Version))
+            }
             if (length(bad))
-              stop("Locked environment does not match renv.lock: ",
-                   paste(unique(bad), collapse = ", "))
-            cat("renv library matches the lockfile\n")'
+              stop(length(bad), " package(s) do not match renv.lock: ",
+                   paste(utils::head(bad, 10), collapse = ", "))
+            cat("all", length(lock), "locked packages installed at the recorded version\n")'
 
       - name: Every R file parses
         run: Rscript -e 'for (f in list.files("bayesian", "[.]R$", recursive = TRUE, full.names = TRUE)) parse(f)'
