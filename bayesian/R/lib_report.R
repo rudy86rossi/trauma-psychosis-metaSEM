@@ -243,7 +243,49 @@ build_tables <- function(cfg, lock, results, cross_layer, freq, sbc) {
     }))
   }
 
+  ## Every fit of every contrast that reached a decision, in one place.
+  ##
+  ## A decision whose interval clears the threshold by less than 0.001 cannot be
+  ## honestly summarised by a count of variants that "retained" it: the
+  ## categorical label flips on a boundary the estimates barely move across. The
+  ## reader needs the estimates themselves, from every layer, prior variant,
+  ## covariance construction, likelihood and deletion, with the distance from the
+  ## threshold made explicit and the reportability of each refit shown.
+  targeted <- NULL
+  if (nrow(decided)) {
+    all_dz <- results$slopes[results$slopes$estimand == "d_z", ]
+    targeted <- do.call(rbind, lapply(seq_len(nrow(decided)), function(i) {
+      d <- decided[i, ]
+      g <- all_dz[all_dz$pathway == d$pathway & all_dz$moderator == d$moderator &
+                    all_dz$coordinate == d$coordinate, ]
+      if (!nrow(g)) return(NULL)
+      rp <- lock$reportability
+      arms <- rp$note[rp$pathway == d$pathway & rp$moderator == d$moderator]
+      tau <- results$heterogeneity
+      tau_max <- if (!is.null(tau)) {
+        t2 <- tau[tau$pathway == d$pathway & tau$moderator == d$moderator &
+                    tau$fit_class == "stan_primary", ]
+        if (nrow(t2)) max(t2$median) else NA_real_
+      } else NA_real_
+      cbind(
+        data.frame(target_pathway = d$pathway, target_moderator = d$moderator,
+                   target_coordinate = d$coordinate,
+                   parent_group_counts = if (length(arms)) arms[1] else NA_character_,
+                   parent_tau_max = tau_max, stringsAsFactors = FALSE),
+        g[, intersect(c("fit_id", "fit_class", "variant", "drop_sample", "reportable",
+                        "k_samples", "median", "hdi_lower", "hdi_upper", "sesoi",
+                        "decision", "p_gt0"), names(g)), drop = FALSE],
+        ## How far the interval sits from the threshold that decides the label.
+        ## A margin of 0.0006 is not a disagreement about the effect.
+        data.frame(hdi_margin_from_sesoi =
+                     pmin(abs(g$hdi_upper) - g$sesoi, abs(g$hdi_lower) - g$sesoi),
+                   stringsAsFactors = FALSE))
+    }))
+    rownames(targeted) <- NULL
+  }
+
   list(headline = headline, slopes = dz, slopes_all = prim_slopes,
+       targeted_sensitivity = targeted,
        pooled = pooled, predict = predict, pi_summary = pi_summary,
        contrasts = results$contrasts[results$contrasts$fit_class == "stan_primary", ],
        cross_layer = cross_layer, frequentist = freq,
@@ -436,6 +478,7 @@ promote_run <- function(cfg, analysis_id, data_sha, lock, results, tables,
   w(tables$contrast_support,"tables", "contrast_support.csv")
   w(tables$stability,       "tables", "leave_one_study_out_stability.csv")
   w(tables$loso_detail,     "tables", "leave_one_study_out_detail.csv")
+  w(tables$targeted_sensitivity, "tables", "targeted_sensitivity.csv")
   w(tables$prior_stability, "tables", "prior_grid_stability.csv")
   w(tables$decided,         "tables", "decisions.csv")
   w(tables$vz_comparison,   "tables", "vz_comparison.csv")
