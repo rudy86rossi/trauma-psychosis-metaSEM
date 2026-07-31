@@ -120,70 +120,91 @@ test_that("write_canonical is stable under row permutation", {
   expect_equal(sha256_file(f1), sha256_file(f2))
 })
 
-# ---- the independent-sample registry ----------------------------------------
-# Before this existed, `sample_id` was a serial relabelling of
+# ---- the cohort registry ----------------------------------------------------
+# Before the curated map existed, `sample_id` was a serial relabelling of
 # paste(studyID, year): samples.csv was written by the lock and never read, so
 # the comment claiming a curated registry defined the analytical unit was false.
-# These tests assert the two things the registry is actually for: structural
-# contradictions stop the build, and judgement calls are surfaced instead.
+# Identity assertions now live in sample_map.csv and are tested in
+# test-sample-identity.R. These tests cover what the registry is still for:
+# structural contradictions stop the build, and judgement calls are surfaced.
 
 test_that("the registry owns the identifiers and every effect row is declared", {
   reg <- read.csv("../../../data/provenance/samples.csv", stringsAsFactors = FALSE,
                   na.strings = "")
-  expect_true(all(SAMPLE_REGISTRY_COLS %in% names(reg)))
+  expect_true(all(SAMPLE_REGISTRY_OWNED %in% names(reg)))
   expect_setequal(unique(unlist(lapply(LOCK$analysis, `[[`, "sample_id"))),
                   intersect(reg$sample_id, unlist(lapply(LOCK$analysis, `[[`, "sample_id"))))
-  # No effect row may reach the analysis without a declared sample.
+  # No effect row may reach the analysis without a declared cohort, and none
+  # without the mapping row that put it there.
   expect_false(anyNA(LOCK$effects$sample_id))
+  expect_false(anyNA(LOCK$effects$map_id))
+  # The derived half of the registry is published but never read back.
+  expect_true(all(SAMPLE_REGISTRY_COLS %in% names(LOCK$samples)))
 })
 
-test_that("one sample cannot carry two participant counts", {
+test_that("one cohort cannot carry two participant counts", {
   # The previous code took whichever row came first, so a genuine disagreement
   # between two workbooks about the same cohort was resolved by row order. That
   # is a contradiction in the data, not a judgement call, so it must be fatal.
+  # It now bites at the level a merge can actually create it: two reports the
+  # curator has asserted to be one cohort, disagreeing about how many people.
   ALL <- do.call(rbind, LOCK$analysis)
   ALL$analysis_role <- "primary"; ALL$excluded <- FALSE
   bad <- ALL
-  bad$n[nrow(bad)] <- bad$n[nrow(bad)] + 1
-  bad$sample_key[nrow(bad)] <- bad$sample_key[1]
-  bad$n[1] <- bad$n[nrow(bad)] - 1
-  expect_error(build_sample_registry(bad, tempfile()),
+  bad$sample_id[nrow(bad)] <- bad$sample_id[1]
+  bad$n[nrow(bad)] <- bad$n[1] + 1
+  expect_error(build_sample_registry(bad, LOCK$sample_map, LOCK$samples),
                "more than one participant count")
 })
 
-test_that("a verified sample must name who verified it", {
-  ALL <- do.call(rbind, LOCK$analysis)
-  ALL$analysis_role <- "primary"; ALL$excluded <- FALSE
-  reg <- LOCK$samples
-  reg$verification_status[1] <- "verified"      # but no verified_by / verified_date
-  p <- tempfile(fileext = ".csv")
-  write.csv(reg, p, row.names = FALSE, na = "")
-  expect_error(build_sample_registry(ALL, p), "without verified_by")
+test_that("cohort verification is derived from the mapping rows, never asserted", {
+  # Storing a status on samples.csv as well as on sample_map.csv would let two
+  # files disagree about whether the same thing had been checked. The registry
+  # therefore has no verification column to edit: the value is computed.
+  reg <- read.csv("../../../data/provenance/samples.csv", stringsAsFactors = FALSE,
+                  na.strings = "")
+  expect_false("verification_status" %in% names(reg))
 
-  # With attribution it passes.
-  reg$verified_by <- "test"; reg$verified_date <- "2026-07-31"
-  write.csv(reg, p, row.names = FALSE, na = "")
-  expect_silent(invisible(build_sample_registry(ALL, p)))
-})
+  smap <- LOCK$sample_map
+  s <- smap$sample_id[1]
+  expect_equal(derive_cohort_status(s, smap), "derived_unverified")
 
-test_that("an undeclared sample stops the build rather than being invented", {
-  ALL <- do.call(rbind, LOCK$analysis)
-  ALL$analysis_role <- "primary"; ALL$excluded <- FALSE
-  p <- tempfile(fileext = ".csv")
-  write.csv(LOCK$samples[-1, ], p, row.names = FALSE, na = "")
-  expect_error(build_sample_registry(ALL, p), "map to no declared sample_id")
+  ev <- smap; ev$evidence_status[ev$sample_id == s] <- "evidenced"
+  expect_equal(derive_cohort_status(s, ev), "verified")
+
+  # One unevidenced report is enough to withhold the cohort-level claim, which
+  # is the point: the cohort claim is strictly stronger than its parts.
+  part <- ev; part$evidence_status[which(part$sample_id == s)[1]] <- "unevidenced"
+  expect_equal(derive_cohort_status(s, part), "derived_unverified")
+
+  dis <- ev; dis$evidence_status[which(dis$sample_id == s)[1]] <- "disputed"
+  expect_equal(derive_cohort_status(s, dis), "disputed")
 })
 
 test_that("the review queue names judgement calls without stopping the build", {
   q <- LOCK$review_queue
   expect_true(is.data.frame(q) && nrow(q) > 0)
-  expect_true(all(c("sample_key", "issue", "detail", "question") %in% names(q)))
-  # The one genuine cross-workbook case must be raised: Gibson 2019 supplies
-  # both a dissociation and a negative-schema triplet, and only a human with the
-  # papers can say whether those are the same participants.
-  spans <- q[q$issue == "spans more than one source workbook", ]
-  expect_true("Gibson 2019" %in% spans$sample_key)
+  expect_true(all(c("sample_id", "report_key", "issue", "detail", "question") %in% names(q)))
   # Labels that will not round-trip cleanly are flagged, because a punctuation
   # difference is exactly how one cohort silently becomes two.
   expect_true(any(grepl("punctuation", q$issue)))
+})
+
+test_that("a cross-workbook cohort is queried until it is evidenced, then not", {
+  # Gibson 2019 supplies both a dissociation and a negative-schema triplet, and
+  # only a human with the paper can say whether those are the same participants.
+  # The queue must raise that while it is open and stop raising it once it is
+  # answered: a queue that keeps asking a settled question teaches a reviewer to
+  # ignore it. Gibson's full text establishes one sample of 945 undergraduates
+  # given both the DES and the BCSS, so the item is now closed.
+  ALL <- do.call(rbind, LOCK$analysis)
+  ALL$report_key <- paste(ALL$studyID, ALL$year)
+  spans <- function(q) if (is.null(q)) character(0) else
+    q$report_key[q$issue == "spans more than one source workbook"]
+
+  expect_false("Gibson 2019" %in% spans(LOCK$review_queue))
+
+  open_map <- LOCK$sample_map
+  open_map$evidence_status[open_map$sample_id == "S013"] <- "unevidenced"
+  expect_true("Gibson 2019" %in% spans(sample_review_queue(LOCK$samples, ALL, open_map)))
 })

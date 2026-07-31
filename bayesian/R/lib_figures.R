@@ -88,12 +88,23 @@ make_figures <- function(cfg, tables, dir) {
   ## lines deep, which overflowed the row and clipped "(clamped to support)".
   s$panel <- ifelse(s$clamped, paste0(s$contrast, "\n(clamped to support)"), s$contrast)
 
-  cap_sesoi <- paste(
-    "Shaded band is the null interval, scaled to the contrast actually estimated:",
-    "0.05 Fisher-z across the nominal contrast, held at a constant per-unit threshold,",
-    "so a clamped contrast is not granted a looser test. Both layers are shown on the",
-    "same estimand. A negative value for sample type means the correlation is lower in",
-    "clinical samples.")
+  ## The sign sentence is about the binary sample-type contrast and is meaningless
+  ## on the age, percentage-female and NOS panels, where a negative value means a
+  ## lower correlation at the upper end of a continuous moderator. It was built
+  ## once and passed to all four files, so three of them carried an
+  ## interpretation of a moderator they do not show.
+  cap_sesoi <- function(m) {
+    base <- paste(
+      "Shaded band is the null interval, scaled to the contrast actually estimated:",
+      "0.05 Fisher-z across the nominal contrast, held at a constant per-unit threshold,",
+      "so a clamped contrast is not granted a looser test. Both layers are shown on the",
+      "same estimand.")
+    if (identical(m, "clinical"))
+      paste(base, "A negative value means the correlation is lower in clinical samples.")
+    else
+      paste(base, "A negative value means the correlation is lower at the upper end of",
+            "the contrast named in the subtitle.")
+  }
 
   # --- Figure 1: full-contrast change in each zero-order coordinate ----------
   #
@@ -124,7 +135,7 @@ make_figures <- function(cfg, tables, dir) {
   for (m in unique(s$moderator)) {
     d <- s[s$moderator == m, ]
     h <- 2.4 + 0.34 * length(unique(paste(d$panel, d$pathway_label)))
-    save_figure(fig1_panel(d, unique(d$moderator_label)[1], cap_sesoi),
+    save_figure(fig1_panel(d, unique(d$moderator_label)[1], cap_sesoi(m)),
                 dir, paste0("fig1_moderator_contrasts_", m), height = h)
   }
 

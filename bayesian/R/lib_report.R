@@ -153,17 +153,17 @@ build_tables <- function(cfg, lock, results, cross_layer, freq, sbc) {
   pooled <- results$pooled[results$pooled$fit_class == "stan_primary", ]
   predict <- results$predict[results$predict$fit_class == "stan_primary", ]
 
-  ## Proportion mediated is interpretable only where the total effect is
-  ## separated from zero. The ratio remains mathematically unbounded and can be
-  ## heavy-tailed when the total effect approaches zero, so the flag records
-  ## interpretability rather than implying the interval is well behaved.
+  ## Whether the total effect is separated from zero is retained as a reported
+  ## fact about each pathway. It formerly also gated an `interpretable` flag on
+  ## the proportion mediated. That quantity has been removed from the release
+  ## outright: a ratio whose denominator can approach zero is not made
+  ## reportable by a flag saying when it is not. See
+  ## bayesian/docs/proportion_mediated_removed.md.
   tot <- pooled[pooled$quantity == "total", ]
   tot$total_excludes_zero <- tot$q_lo > 0 | tot$q_hi < 0
   pooled <- merge(pooled, tot[, c("pathway", "moderator", "contrast_index",
                                   "total_excludes_zero")],
                   by = c("pathway", "moderator", "contrast_index"), all.x = TRUE)
-  pooled$interpretable <- ifelse(pooled$quantity == "pmed",
-                                 pooled$total_excludes_zero, TRUE)
 
   ## Prediction-interval summary: how many indirect-effect intervals include
   ## zero, counted rather than asserted.

@@ -218,7 +218,7 @@ extract_stan <- function(cfg, fit, key, mod, spec, df, mods, reportable) {
   ncc <- if (is_mod) length(mods[[mod]]$xc) else 1L
   pooled <- do.call(rbind, lapply(seq_len(ncc), function(ci) {
     mv <- if (is_mod) c(spec$supported_lo, spec$supported_hi)[ci] else NA_real_
-    do.call(rbind, lapply(c("a", "b", "cprime", "ind", "total", "pmed"), function(q) {
+    do.call(rbind, lapply(c("a", "b", "cprime", "ind", "total"), function(q) {
       v <- dr[[sprintf("%s_pop[%d]", q, ci)]]
       if (is.null(v)) return(NULL)
       cbind(base, data.frame(contrast_index = ci, moderator_value = mv, quantity = q,

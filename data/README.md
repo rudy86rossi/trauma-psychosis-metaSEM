@@ -25,9 +25,11 @@ to author and data-governance approval.
 | `inputs/analysis_table.csv` | The locked analysis table, canonically serialised. Everything downstream reads this, never a workbook. |
 | `provenance/corrections.csv` | One row per corrected cell. Twelve rows. |
 | `provenance/quality_scores.csv` | The complete Newcastle-Ottawa record for the negative-schema workbook. Twenty rows. |
-| `provenance/samples.csv` | **Source table, read by the pipeline.** One row per independent participant sample, with its verification status. |
-| `provenance/sample_review_queue.csv` | Generated. Cases the derivation cannot settle, for a human with the papers. |
-| `provenance/effects.csv` | One row per pathway, instrument and effect estimate, linked by `sample_id`. |
+| `provenance/sample_map.csv` | **Source table, read by the pipeline.** One row per eligible effect row, asserting which cohort supplied it and what evidence that assertion rests on. |
+| `provenance/samples.csv` | **Source table, read by the pipeline.** One row per cohort: the identifier, its status, its lineage and a note. It owns the identifiers and nothing else. |
+| `provenance/samples_derived.csv` | Generated. The registry as the pipeline computes it, including the derived verification status. Published for readers; never read back. |
+| `provenance/sample_review_queue.csv` | Generated. Cases the map cannot settle, for a human with the papers. |
+| `provenance/effects.csv` | One row per pathway, instrument and effect estimate, linked by `sample_id` and `map_id`. |
 | `provenance/exclusions.csv` | Studies excluded by explicit decision, with the reason and status. |
 | `provenance/instrument_choices.csv` | Samples that supplied more than one eligible instrument, and which was chosen. |
 | `provenance/reportability.csv` | Per pathway and moderator: `ok`, `fragile` or `not reported`. |
@@ -37,37 +39,80 @@ to author and data-governance approval.
 
 ## The analytical unit
 
-The analytical unit is one independent participant sample, not one paper and not
-one row. `samples.csv` is the registry that records it, and the pipeline **reads**
-it: it owns the identifiers, so they stay stable when a workbook is revised, and
-a `fit_id` such as `loso_stan|negsch_del|clinical|S026` keeps meaning the same
-study across runs.
+The analytical unit is one participant cohort, not one paper and not one row.
+Identity is **asserted** in `sample_map.csv` and is never derived from text.
 
-Sample identity is still **derived**, from `paste(studyID, year)`. That is a
-heuristic. It cannot separate two cohorts published by one author in one year,
-and it cannot recognise one cohort appearing under two labels. The registry does
-not pretend otherwise. It does two things instead.
+`paste(studyID, year)` survives only as a report label. It used to be the
+identifier, minted in `lib_data.R`, used immediately to group rows and demote
+duplicates by instrument priority, and only then joined to `samples.csv`. Three
+things followed from that ordering. One report could never map to two cohorts,
+because the join was many-to-one on a string. Two reports could never map to one
+cohort, because the registry held one row per string. And both structural
+collision gates were unreachable, because the demotion had already guaranteed one
+primary row per pathway and key before either could run.
 
-**Structural contradictions stop the build.** These are cases where the data
-disagree with themselves and no judgement can rescue them:
+`sample_map.csv` has one row per eligible effect row, keyed on
+`source_effect_id`: the workbook, sheet, row and pathway the estimate came from.
+Position, not content, for the same reason a correction is addressed by its
+cell. A semantic key cannot separate two cohorts that agree on pathway, author,
+year and instrument, which is precisely the case this exists to handle. The row
+fingerprint travels with the assertion and is re-verified on every build, so a
+workbook revision that moves the ground under a curated decision stops the build
+instead of silently reassigning identity.
 
-- an effect row that maps to no declared `sample_id`;
-- one `sample_id` carrying two different participant counts, which means it is
-  either two samples or a transcription error;
-- two primary rows in one pathway sharing an author-year key;
+`multiplicity` declares what a repeated cohort means: `single`,
+`alternative_instrument` (one cohort measured with two instruments, which is what
+licenses instrument-priority selection), or `superseded_report`. Two rows that
+merely collide are left alone, so the collision gate can see them.
+
+`samples.csv` owns the identifiers. They are never deleted and never reused: a
+cohort that leaves the analysis is marked `retired` and its `predecessor_ids` and
+`successor_ids` record the lineage, because a `fit_id` such as
+`loso_stan|negsch_del|clinical|S026` must keep meaning one cohort across runs. If
+curation ever splits or merges a cohort, the affected identifier is retired
+rather than quietly repointed.
+
+**Verification lives on the mapping row and nowhere else.** `samples.csv` has no
+verification column to edit; the cohort-level status is derived, and a cohort
+counts as verified only when every report mapped to it has been evidenced. Two
+files therefore cannot disagree about whether the same thing was checked.
+
+Evidence must be a full-text page, table or recruitment passage, a registry
+record, or correspondence, and it must carry a locator another reader can turn
+to. A DOI, an abstract and a matching participant count are **not** admissible:
+none of them establishes that two reports describe the same people. Who prepared
+the research and who accepted it are recorded separately, and research prepared
+by a machine is labelled as such. `author_confirmation` is reserved for
+confirmation from the original study's authors.
+
+**Structural contradictions stop the build.** These are cases where the data or
+the assertions disagree with themselves and no judgement can rescue them:
+
+- an effect row with no curated mapping, or a mapping row matching no effect row;
+- a source row whose fingerprint has changed under its assertion;
+- two live rows in one pathway on one `sample_id` with nothing declaring why;
+- one cohort carrying two different participant counts;
+- a declared cohort nothing maps to, or a retired identifier still in use;
+- an instrument tie that the configured priority does not separate;
 - a Newcastle-Ottawa value that is not an integer in range, or has no authority;
 - a duplicated correction;
-- a row marked `verified` with no `verified_by` and `verified_date`.
+- a row marked `evidenced` without an admissible type, a checkable locator, an
+  acceptor and a date at or before today.
 
-**Judgement calls are surfaced, not silently resolved.** `sample_review_queue.csv`
-is regenerated every run and names each case an author needs to settle: keys
-spanning two source workbooks, labels whose punctuation will not round-trip, and
-same-author pairs in adjacent years.
+**Judgement calls are surfaced, not silently resolved.**
+`sample_review_queue.csv` is regenerated every run and names each case a human
+needs to settle: cohorts spanning two source workbooks, labels whose punctuation
+will not round-trip, same-author pairs in adjacent years, merges and splits
+asserted but not yet evidenced, and superseded reports that disagree about how
+many people there were. An item clears once the evidence answers it, so the queue
+does not keep asking a settled question.
 
-Every row is currently `derived_unverified`. Until an author signs them off,
-nothing in this release may describe the analytical unit as verified, and
-`check_documents()` enforces that: the stronger wording fails the build while any
-row remains unverified.
+Most rows remain `unevidenced`. Until they are checked, nothing in this release
+may describe the analytical unit as independently verified, and
+`check_documents()` enforces that: it requires the generated caveat verbatim, and
+it fails any unqualified assertion about sample independence in the surrounding
+prose. See `bayesian/docs/sample_identity_verification.md` for what has been
+checked and what has not.
 
 ## What the corrections are
 

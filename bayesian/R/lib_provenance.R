@@ -210,150 +210,418 @@ apply_quality_scores <- function(df, qs, workbook, id_col, year_col, nos_col = "
   df
 }
 
-## ---- the independent-sample registry ---------------------------------------
+## ---- curated sample identity -----------------------------------------------
 #
-# The analytical unit is one independent participant sample. Until this was
-# added, `sample_id` was a serial relabelling of `paste(studyID, year)`:
-# samples.csv was WRITTEN by the lock and never read back, so the claim that a
-# curated registry defined the unit was false, and nothing detected two cohorts
-# published by one author in one year or one cohort appearing under two labels.
+# The analytical unit is one independent participant sample. Identity is
+# ASSERTED, in data/provenance/sample_map.csv, and is never derived from text.
 #
-# The registry does not, and cannot, decide sample identity by itself. That
-# needs a human with the papers. What it does is make the derivation an explicit,
-# reviewable artefact, hold the identifiers stable across workbook revisions, and
-# separate two different kinds of problem:
+# The previous design minted `paste(studyID, year)` in lib_data.R, grouped rows
+# by it, demoted duplicates by instrument priority, and only then joined
+# samples.csv with match(). Three consequences followed. One report could never
+# map to two cohorts, because the join was many-to-one. Two reports could never
+# map to one cohort, because the registry held one row per author-year string.
+# And both structural collision gates were unreachable, because the demotion had
+# already guaranteed one primary row per (pathway, key) before either ran.
 #
-#   STRUCTURAL failures stop the build. The data contradict themselves and no
-#   amount of judgement rescues them.
-#   REVIEW items do not stop the build. The derivation may be wrong in a way
-#   only an author can settle, so it is surfaced by name rather than buried.
+# The map is keyed on `source_effect_id`, the position of a row in its source
+# workbook, for the same reason a correction is addressed by its cell: a
+# semantic key cannot separate two cohorts agreeing on pathway, author, year and
+# instrument, which is precisely the case this exists to handle. The row
+# fingerprint travels with the assertion and is re-verified on every build, so a
+# workbook revision that moves the ground under an assertion stops the build
+# rather than silently reassigning identity.
+#
+# Verification lives on the mapping row and nowhere else. samples.csv DERIVES a
+# cohort-level status from those rows and is never read back for it, so two
+# fields cannot disagree about whether the same thing was checked.
+#
+# Two kinds of problem stay separate. STRUCTURAL failures stop the build: the
+# data or the assertions contradict themselves and no judgement rescues them.
+# REVIEW items do not stop the build: they are questions about the world that
+# only a human with the papers can settle, so they are surfaced by name.
 
-SAMPLE_REGISTRY_COLS <- c("sample_id", "sample_key", "study_label", "year",
-                          "n_reported", "pathways", "verification_status",
-                          "verification_source", "verified_by", "verified_date")
+SAMPLE_REGISTRY_COLS <- c("sample_id", "canonical_label", "sample_status",
+                          "predecessor_ids", "successor_ids", "study_label",
+                          "year", "n_reported", "n_reports", "report_keys",
+                          "pathways", "verification_status", "note")
+
+## Authoritative in the file, read back and obeyed.
+SAMPLE_REGISTRY_OWNED <- c("sample_id", "canonical_label", "sample_status",
+                           "predecessor_ids", "successor_ids", "note")
+
+SAMPLE_MAP_COLS <- c("map_id", "source_effect_id", "workbook", "sheet", "source_row",
+                     "pathway", "studyID", "year", "instrument", "n", "row_fingerprint",
+                     "sample_id", "multiplicity", "mapping_basis", "evidence_status",
+                     "evidence_type", "evidence_locator", "evidence_prepared_by",
+                     "accepted_by", "accepted_date", "note")
 
 VERIFICATION_STATUSES <- c("derived_unverified", "verified", "disputed")
+SAMPLE_STATUSES       <- c("in_analysis", "retired")
+MULTIPLICITIES        <- c("single", "alternative_instrument", "superseded_report")
+MAPPING_BASES         <- c("author_year_default", "curated_confirm",
+                           "curated_merge", "curated_split")
 
-#' Derive the registry from the observed effect rows, then reconcile it with the
-#' committed source table if one exists.
+## What may stand as evidence that a report describes a given cohort.
+##
+## A DOI, an abstract and a matching participant count are deliberately absent.
+## None of them establishes that two reports describe the same people or that
+## one report describes two cohorts, which is the only question the map exists
+## to answer. A matching N is corroboration and belongs in `note`.
+EVIDENCE_STATUSES <- c("unevidenced", "evidenced", "disputed")
+EVIDENCE_TYPES    <- c("fulltext", "correspondence", "author_confirmation", "registry")
+
+## A locator has to be checkable by someone else. "fulltext: yes" and "checked
+## the paper" are not locators. Two forms qualify. A NUMBERED locator names a
+## page, table, figure, numbered section, appendix or supplement. A NAMED
+## locator names the structural section of a report in which a sample is
+## described, which is what a recruitment passage actually is: journal articles
+## do not number their sections, so requiring a number would have excluded the
+## commonest admissible evidence and pushed curators towards vaguer wording.
+LOCATOR_DOCUMENT <- paste0("(\\bpp?\\.?\\s*[0-9]+|\\bpages?\\s*[0-9]+|\\btable\\s*[0-9A-Za-z]+",
+                           "|\\bfigure\\s*[0-9A-Za-z]+|\\bfig\\.?\\s*[0-9A-Za-z]+",
+                           "|\\bsection\\s*[0-9A-Za-z.]+|\\bappendix\\b|\\bsupplement",
+                           "|\\bmethods?\\b|\\bparticipants?\\b|\\bsubjects?\\b|\\bsample\\b",
+                           "|\\brecruit(ment|ed)?\\b|\\bprocedure\\b|\\bmeasures?\\b",
+                           "|\\bmaterials?\\b|\\bresults?\\b)")
+LOCATOR_CONTACT  <- "(e-?mail|letter|personal communication|correspondence)"
+
+#' The identifier of one row of one source workbook, in one pathway.
 #'
-#' @param ALL every eligible effect row, carrying `sample_key`, `pathway`, `n`.
-#' @param path committed registry. Absent on a first run, which seeds it.
-#' @return list(samples, review_queue)
-build_sample_registry <- function(ALL, path = "data/provenance/samples.csv") {
-  sk <- unique(ALL$sample_key)
-  derived <- data.frame(
-    sample_key  = sk,
-    study_label = sub(" [0-9]{4}$", "", sk),
-    year        = as.integer(sub("^.* ", "", sk)),
-    stringsAsFactors = FALSE)
-  derived$pathways <- vapply(derived$sample_key, function(k)
-    paste(sort(unique(ALL$pathway[ALL$sample_key == k])), collapse = ";"), character(1))
+#' Position, not content. Two cohorts can agree on pathway, author, year and
+#' instrument; they cannot occupy the same spreadsheet row. `pathway` is carried
+#' even though every row currently feeds exactly one pathway, so that a future
+#' filter which routes one row to two pathways cannot make the key ambiguous.
+source_effect_id <- function(workbook, sheet, source_row, pathway)
+  sprintf("%s|%s|%d|%s", workbook, as.character(sheet), as.integer(source_row), pathway)
 
-  ## STRUCTURAL: one sample cannot have two participant counts. The previous
-  ## code took whichever row happened to come first, so a genuine disagreement
-  ## between two workbooks about the same cohort was silently resolved by row
-  ## order.
-  n_by_key <- lapply(sk, function(k) sort(unique(ALL$n[ALL$sample_key == k])))
-  names(n_by_key) <- sk
-  inconsistent <- names(n_by_key)[vapply(n_by_key, length, integer(1)) > 1L]
-  if (length(inconsistent))
-    stop("A sample carries more than one participant count, so it is either two ",
-         "samples or a transcription error: ",
-         paste(vapply(inconsistent, function(k)
-           sprintf("%s (n = %s)", k, paste(n_by_key[[k]], collapse = ", ")),
-           character(1)), collapse = "; "),
-         ". Resolve in the workbook or split the sample key before proceeding.")
-  derived$n_reported <- vapply(n_by_key, function(x) x[1], numeric(1))[derived$sample_key]
-
-  ## STRUCTURAL: two rows in one pathway sharing an author-year key means the
-  ## key cannot separate them, so the instrument-priority rule would demote one
-  ## arbitrarily. Rows already marked as alternative instruments are excluded,
-  ## since those are a deliberate second measurement of ONE sample.
-  prim <- ALL[ALL$analysis_role == "primary" & !ALL$excluded, ]
-  clash <- prim[duplicated(paste(prim$pathway, prim$sample_key)), ]
-  if (nrow(clash))
-    stop("Two primary rows in one pathway share an author-year key, so the key ",
-         "cannot identify the sample: ",
-         paste(unique(paste(clash$pathway, clash$sample_key)), collapse = ", "), ".")
-
-  ## Reconcile with the committed registry, which owns the identifiers.
-  if (file.exists(path)) {
-    reg <- utils::read.csv(path, stringsAsFactors = FALSE, na.strings = "")
-    miss_col <- setdiff(SAMPLE_REGISTRY_COLS, names(reg))
-    if (length(miss_col))
-      stop("samples.csv is missing required column(s): ",
-           paste(miss_col, collapse = ", "),
-           ". Delete the file to reseed it, then re-verify.")
-
-    undeclared <- setdiff(derived$sample_key, reg$sample_key)
-    if (length(undeclared))
-      stop(length(undeclared), " effect row(s) map to no declared sample_id: ",
-           paste(utils::head(undeclared, 5), collapse = ", "),
-           ". Add them to data/provenance/samples.csv, with a verification status, ",
-           "before they can enter the analysis.")
-
-    bad <- setdiff(unique(reg$verification_status), VERIFICATION_STATUSES)
-    if (length(bad))
-      stop("Unknown verification_status in samples.csv: ",
-           paste(bad, collapse = ", "), ". Allowed: ",
-           paste(VERIFICATION_STATUSES, collapse = ", "), ".")
-
-    ## A claim of verification must name who made it and when. Otherwise
-    ## "verified" is a word rather than an assertion anyone is answerable for.
-    v <- reg[reg$verification_status == "verified", ]
-    unattributed <- v$sample_id[is.na(v$verified_by) | is.na(v$verified_date) |
-                                  !nzchar(trimws(v$verified_by))]
-    if (length(unattributed))
-      stop("Sample(s) marked verified without verified_by and verified_date: ",
-           paste(unattributed, collapse = ", "), ".")
-
-    samples <- merge(reg[, c("sample_id", "sample_key", "verification_status",
-                             "verification_source", "verified_by", "verified_date")],
-                     derived, by = "sample_key", all.y = TRUE)
-    samples <- samples[order(samples$sample_id), SAMPLE_REGISTRY_COLS]
-  } else {
-    ## First run: seed the registry. Every row is unverified by construction.
-    derived <- derived[order(derived$year, derived$study_label), ]
-    samples <- cbind(
-      data.frame(sample_id = sprintf("S%03d", seq_len(nrow(derived))),
-                 stringsAsFactors = FALSE),
-      derived,
-      data.frame(verification_status = "derived_unverified",
-                 verification_source = NA_character_,
-                 verified_by = NA_character_, verified_date = NA_character_,
-                 stringsAsFactors = FALSE))[, SAMPLE_REGISTRY_COLS]
-  }
-  rownames(samples) <- NULL
-
-  list(samples = samples, review_queue = sample_review_queue(samples, ALL))
+#' Read the curated map. Its absence is fatal, not a licence to derive identity.
+read_sample_map <- function(path = "data/provenance/sample_map.csv") {
+  if (!file.exists(path))
+    stop("The curated sample map is missing: ", path,
+         ". Sample identity is asserted, never inferred from author and year. ",
+         "Seed it with Rscript bayesian/tools/seed_sample_map.R, then curate it.")
+  m <- utils::read.csv(path, stringsAsFactors = FALSE, na.strings = "",
+                       colClasses = "character")
+  m$source_row <- as.integer(m$source_row)
+  m$year       <- as.integer(m$year)
+  m$n          <- as.numeric(m$n)
+  m
 }
 
-#' Cases the derivation cannot settle, named so a reviewer can settle them.
+#' Read the cohort registry. Absence is fatal for the same reason.
+read_sample_registry <- function(path = "data/provenance/samples.csv") {
+  if (!file.exists(path))
+    stop("The cohort registry is missing: ", path,
+         ". Seed it with Rscript bayesian/tools/seed_sample_map.R.")
+  ## Only the owned columns are read back; the rest are derived every run and
+  ## republished to samples_derived.csv, so nothing here is coerced on trust.
+  utils::read.csv(path, stringsAsFactors = FALSE, na.strings = "")
+}
+
+blank <- function(x) is.na(x) | !nzchar(trimws(x))
+
+#' File-level validation of the curated map and the registry it points into.
+#'
+#' Everything here can be checked without a workbook, so it runs before a single
+#' row is read, and a curator gets one error naming the row rather than a
+#' downstream failure naming a matrix.
+validate_sample_map <- function(smap, reg,
+                                smap_path = "data/provenance/sample_map.csv",
+                                reg_path  = "data/provenance/samples.csv") {
+  miss <- setdiff(SAMPLE_MAP_COLS, names(smap))
+  if (length(miss))
+    stop(smap_path, " is missing required column(s): ", paste(miss, collapse = ", "), ".")
+  miss <- setdiff(SAMPLE_REGISTRY_OWNED, names(reg))
+  if (length(miss))
+    stop(reg_path, " is missing required column(s): ", paste(miss, collapse = ", "), ".")
+
+  if (anyDuplicated(smap$map_id))
+    stop("Duplicate map_id in ", smap_path, ": ",
+         paste(unique(smap$map_id[duplicated(smap$map_id)]), collapse = ", "), ".")
+  if (anyDuplicated(smap$source_effect_id))
+    stop("Two mapping rows address the same source row in ", smap_path, ": ",
+         paste(unique(smap$source_effect_id[duplicated(smap$source_effect_id)]),
+               collapse = ", "), ".")
+  if (anyDuplicated(reg$sample_id))
+    stop("Duplicate sample_id in ", reg_path, ": ",
+         paste(unique(reg$sample_id[duplicated(reg$sample_id)]), collapse = ", "), ".")
+
+  chk <- function(x, allowed, field, path) {
+    bad <- setdiff(unique(x), allowed)
+    if (length(bad))
+      stop("Unknown ", field, " in ", path, ": ", paste(bad, collapse = ", "),
+           ". Allowed: ", paste(allowed, collapse = ", "), ".")
+  }
+  chk(smap$multiplicity,    MULTIPLICITIES,    "multiplicity",    smap_path)
+  chk(smap$mapping_basis,   MAPPING_BASES,     "mapping_basis",   smap_path)
+  chk(smap$evidence_status, EVIDENCE_STATUSES, "evidence_status", smap_path)
+  chk(stats::na.omit(smap$evidence_type), EVIDENCE_TYPES, "evidence_type", smap_path)
+  chk(reg$sample_status,    SAMPLE_STATUSES,   "sample_status",   reg_path)
+
+  undeclared <- setdiff(smap$sample_id, reg$sample_id)
+  if (length(undeclared))
+    stop(length(undeclared), " mapping row(s) point at a sample_id that ", reg_path,
+         " does not declare: ", paste(utils::head(undeclared, 5), collapse = ", "),
+         ". Declare the cohort before a report can be mapped to it.")
+
+  ## An assertion of evidence has to name what was read and who accepted it.
+  ## Otherwise "evidenced" is a word rather than a claim someone is answerable
+  ## for, which is the failure mode this whole file exists to prevent.
+  ev <- smap[smap$evidence_status == "evidenced", , drop = FALSE]
+  if (nrow(ev)) {
+    bad <- ev$map_id[blank(ev$evidence_type) | blank(ev$evidence_locator) |
+                       blank(ev$accepted_by) | blank(ev$accepted_date)]
+    if (length(bad))
+      stop("Mapping row(s) marked evidenced without evidence_type, ",
+           "evidence_locator, accepted_by and accepted_date: ",
+           paste(bad, collapse = ", "), ".")
+
+    d <- suppressWarnings(as.Date(ev$accepted_date, format = "%Y-%m-%d"))
+    bad <- ev$map_id[is.na(d) | d > Sys.Date()]
+    if (length(bad))
+      stop("Mapping row(s) with an accepted_date that is not an ISO date at or ",
+           "before today: ", paste(bad, collapse = ", "), ".")
+
+    doc <- ev$evidence_type %in% c("fulltext", "registry")
+    bad <- ev$map_id[doc & !grepl(LOCATOR_DOCUMENT, ev$evidence_locator, ignore.case = TRUE)]
+    if (length(bad))
+      stop("Mapping row(s) citing a document without a checkable locator: ",
+           paste(bad, collapse = ", "),
+           ". Name a page, table, figure, section, appendix or supplement.")
+
+    ## author_confirmation means the study's own authors confirmed it. Anything
+    ## else that happens to arrive by email is `correspondence`.
+    con <- ev$evidence_type %in% c("correspondence", "author_confirmation")
+    bad <- ev$map_id[con & !grepl(LOCATOR_CONTACT, ev$evidence_locator, ignore.case = TRUE)]
+    if (length(bad))
+      stop("Mapping row(s) citing correspondence without identifying it: ",
+           paste(bad, collapse = ", "),
+           ". Name the exchange, for example correspondence: author e-mail 2026-08-04.")
+  }
+
+  ## Evidence is prepared and accepted by different parties, and research
+  ## prepared by a machine is labelled as such wherever it is relied on.
+  bad <- smap$map_id[smap$evidence_status != "unevidenced" & blank(smap$evidence_prepared_by)]
+  if (length(bad))
+    stop("Mapping row(s) carrying evidence without recording who prepared it: ",
+         paste(bad, collapse = ", "), ".")
+
+  invisible(TRUE)
+}
+
+#' Attach the curated identity to one pathway's effect rows.
+#'
+#' Runs BEFORE instrument selection. That ordering is the whole repair: the
+#' previous code chose a primary instrument first and asked who the participants
+#' were afterwards, at which point the answer could no longer change anything.
+apply_sample_map <- function(df, smap, path = "data/provenance/sample_map.csv") {
+  key <- df$pathway[1]
+  j   <- match(df$source_effect_id, smap$source_effect_id)
+
+  none <- which(is.na(j))
+  if (length(none))
+    stop(key, ": ", length(none), " eligible effect row(s) have no curated mapping in ",
+         path, ". Identity is asserted, not inferred, so the build stops here. Add:\n  ",
+         paste(sprintf("<map_id>,%s,%s,%s,%d,%s,%s,%d,%s,%g,%s,<sample_id>,single,curated_confirm,unevidenced",
+                       df$source_effect_id[none], df$source_workbook[none],
+                       df$source_sheet[none], df$source_row[none], key,
+                       df$studyID[none], df$year[none],
+                       ifelse(is.na(df$instrument[none]), "", df$instrument[none]),
+                       df$n[none], df$row_fingerprint[none]),
+               collapse = "\n  "))
+
+  ## The fingerprint is the fail-loud half of the key. The row index keeps an
+  ## assertion attached to its row when a cell is corrected; the fingerprint
+  ## makes sure the row is still the row the curator looked at.
+  moved <- which(!is.na(smap$row_fingerprint[j]) &
+                   nzchar(smap$row_fingerprint[j]) &
+                   smap$row_fingerprint[j] != df$row_fingerprint)
+  if (length(moved))
+    stop(key, ": the source row behind ", length(moved), " curated mapping(s) has changed: ",
+         paste(sprintf("%s (expected %s, found %s)", smap$map_id[j][moved],
+                       substr(smap$row_fingerprint[j][moved], 1, 12),
+                       substr(df$row_fingerprint[moved], 1, 12)), collapse = ", "),
+         ". A changed row is a question about who these people are. Re-check the ",
+         "cohort and update ", path, " in the same commit as the workbook change.")
+
+  bad <- which(!is.na(smap$n[j]) & smap$n[j] != df$n)
+  if (length(bad))
+    stop(key, ": the curated map records n = ", paste(smap$n[j][bad], collapse = ", "),
+         " for ", paste(smap$map_id[j][bad], collapse = ", "),
+         " but the locked workbook gives ", paste(df$n[bad], collapse = ", "), ".")
+
+  df$map_id        <- smap$map_id[j]
+  df$sample_id     <- smap$sample_id[j]
+  df$multiplicity  <- smap$multiplicity[j]
+  df$mapping_basis <- smap$mapping_basis[j]
+  df
+}
+
+#' Cohort-level verification, DERIVED from the mapping rows and never asserted.
+#'
+#' A cohort is verified only when every report mapped to it has been evidenced.
+#' Storing this on samples.csv as well would allow two files to disagree about
+#' whether the same thing had been checked.
+derive_cohort_status <- function(sample_ids, smap) {
+  vapply(sample_ids, function(s) {
+    st <- smap$evidence_status[smap$sample_id == s]
+    if (!length(st))               return("derived_unverified")
+    if (any(st == "disputed"))     return("disputed")
+    if (all(st == "evidenced"))    return("verified")
+    "derived_unverified"
+  }, character(1), USE.NAMES = FALSE)
+}
+
+#' Structural invariants over the assembled effect rows. Every one is fatal.
+gate_sample_identity <- function(ALL, smap, reg) {
+  ## G1. Nothing reaches the analysis without a curated identity.
+  if (anyNA(ALL$sample_id) || anyNA(ALL$map_id))
+    stop(sum(is.na(ALL$sample_id) | is.na(ALL$map_id)),
+         " effect row(s) reached the analysis with no curated sample identity.")
+
+  ## G2. THE COLLISION GATE. Two live rows in one pathway on one sample_id are
+  ## one cohort measured more than once, which is a claim about participants and
+  ## so is declared rather than inferred from the collision. This could not fire
+  ## before: analysis_role assignment had already demoted one of any such pair to
+  ## sensitivity_alternative_instrument before the gate ever ran.
+  live  <- ALL[!ALL$excluded & ALL$multiplicity == "single", , drop = FALSE]
+  k     <- paste(live$pathway, live$sample_id)
+  clash <- live[k %in% k[duplicated(k)], , drop = FALSE]
+  if (nrow(clash))
+    stop("Two or more primary rows in one pathway are mapped to one sample_id and ",
+         "none declares why: ",
+         paste(unique(sprintf("%s %s (%s %s)", clash$pathway, clash$sample_id,
+                              clash$report_key, clash$instrument)), collapse = "; "),
+         ". Either they are different cohorts, so give them different sample_ids, ",
+         "or they are one cohort measured more than once, so set multiplicity to ",
+         "alternative_instrument or superseded_report.")
+
+  ## G3. A mapping row that matches nothing is how a curated decision silently
+  ## stops applying after a workbook is revised.
+  stale <- setdiff(smap$map_id, ALL$map_id)
+  if (length(stale))
+    stop(length(stale), " mapping row(s) match no eligible effect row: ",
+         paste(utils::head(stale, 5), collapse = ", "),
+         ". The map has drifted from the workbooks.")
+
+  ## G4. A declared cohort nothing maps to is a split that never happened.
+  used   <- unique(ALL$sample_id)
+  active <- reg$sample_id[reg$sample_status == "in_analysis"]
+  orphan <- setdiff(active, used)
+  if (length(orphan))
+    stop("Declared cohort(s) that no effect row maps to: ",
+         paste(orphan, collapse = ", "),
+         ". Map a row to each, or set sample_status to retired. Identifiers are ",
+         "never deleted and never reused, because a fit_id such as ",
+         "loso_stan|negsch_del|clinical|S026 must keep meaning one cohort.")
+
+  ## G5. A retired identifier still in use means a split or merge was recorded
+  ## and then not applied.
+  ghost <- setdiff(used, active)
+  if (length(ghost))
+    stop("Effect row(s) mapped to cohort(s) that are not in_analysis: ",
+         paste(ghost, collapse = ", "), ".")
+
+  ## G6. effect_id must be unique. apply_registry() disambiguates a within-cohort
+  ## collision by appending the cohort, so reaching here means two rows collided
+  ## on the identifier AND on the cohort, which no legitimate split produces.
+  if (anyDuplicated(ALL$effect_id))
+    stop("Duplicate effect_id after cohort disambiguation: ",
+         paste(unique(ALL$effect_id[duplicated(ALL$effect_id)]), collapse = ", "),
+         ". Two rows share a pathway, report label, instrument and cohort.")
+
+  invisible(TRUE)
+}
+
+#' Build the cohort registry: derived facts, reconciled with the committed file
+#' that owns the identifiers.
+#'
+#' @param ALL every eligible effect row, carrying `sample_id`, `report_key`, `n`.
+#' @param smap the curated map.
+#' @param reg the committed registry.
+#' @return list(samples, review_queue)
+build_sample_registry <- function(ALL, smap, reg) {
+  sid <- sort(unique(ALL$sample_id))
+  rows_of <- function(s) ALL[ALL$sample_id == s, , drop = FALSE]
+
+  ## STRUCTURAL: one cohort cannot have two participant counts. A superseded
+  ## report may legitimately restate a different analytic n, so it is excluded
+  ## here and surfaced in the review queue instead.
+  counted <- ALL[ALL$multiplicity != "superseded_report", , drop = FALSE]
+  n_by <- lapply(sid, function(s) sort(unique(counted$n[counted$sample_id == s])))
+  names(n_by) <- sid
+  inconsistent <- names(n_by)[vapply(n_by, length, integer(1)) > 1L]
+  if (length(inconsistent))
+    stop("A cohort carries more than one participant count, so it is either two ",
+         "cohorts or a transcription error: ",
+         paste(vapply(inconsistent, function(s)
+           sprintf("%s (n = %s)", s, paste(n_by[[s]], collapse = ", ")),
+           character(1)), collapse = "; "),
+         ". Resolve in the workbook, or map the reports to different cohorts.")
+
+  lab <- vapply(sid, function(s) {
+    r <- reg$canonical_label[reg$sample_id == s]
+    if (length(r) && !is.na(r[1]) && nzchar(r[1])) r[1] else sort(rows_of(s)$report_key)[1]
+  }, character(1))
+
+  derived <- data.frame(
+    sample_id       = sid,
+    canonical_label = lab,
+    study_label     = sub(" [0-9]{4}$", "", lab),
+    year            = as.integer(sub("^.* ", "", lab)),
+    n_reported      = vapply(n_by, function(x) x[1], numeric(1))[sid],
+    n_reports       = vapply(sid, function(s) length(unique(rows_of(s)$report_key)), integer(1)),
+    report_keys     = vapply(sid, function(s)
+      paste(sort(unique(rows_of(s)$report_key)), collapse = ";"), character(1)),
+    pathways        = vapply(sid, function(s)
+      paste(sort(unique(rows_of(s)$pathway)), collapse = ";"), character(1)),
+    stringsAsFactors = FALSE)
+
+  own <- reg[match(sid, reg$sample_id), SAMPLE_REGISTRY_OWNED, drop = FALSE]
+  derived$sample_status    <- own$sample_status
+  derived$predecessor_ids  <- own$predecessor_ids
+  derived$successor_ids    <- own$successor_ids
+  derived$note             <- own$note
+
+  ## Derived, not read. See derive_cohort_status().
+  derived$verification_status <- derive_cohort_status(sid, smap)
+
+  samples <- derived[order(derived$sample_id), SAMPLE_REGISTRY_COLS]
+  rownames(samples) <- NULL
+
+  list(samples = samples, review_queue = sample_review_queue(samples, ALL, smap))
+}
+
+#' Cases the map cannot settle by itself, named so a reviewer can settle them.
 #'
 #' Emitted, not raised. Each is a question about the world, not a contradiction
 #' in the data, so stopping the build would be the wrong response.
-sample_review_queue <- function(samples, ALL) {
+sample_review_queue <- function(samples, ALL, smap) {
   q <- list()
   add <- function(...) q[[length(q) + 1L]] <<- data.frame(..., stringsAsFactors = FALSE)
 
-  ## One key appearing in two source workbooks is only one sample if the same
-  ## participants were measured for both mediators. Nothing in the spreadsheets
-  ## records that, so it is asserted by a string match until someone checks.
-  wb <- unique(ALL[, c("sample_key", "pathway")])
-  src <- vapply(split(wb$pathway, wb$sample_key), function(p)
+  ## One cohort appearing in two source workbooks is only one cohort if the same
+  ## participants were measured for both mediators. The item clears once every
+  ## mapping row for that cohort is evidenced: the queue exists to raise
+  ## questions a human must settle, so it must stop asking one that has been
+  ## settled, or a reviewer learns to ignore it.
+  wb <- unique(ALL[, c("sample_id", "pathway")])
+  src <- vapply(split(wb$pathway, wb$sample_id), function(p)
     length(unique(sub("_.*$", "", p))), integer(1))
-  for (k in names(src)[src > 1])
-    add(sample_key = k, issue = "spans more than one source workbook",
-        detail = paste(sort(unique(wb$pathway[wb$sample_key == k])), collapse = ";"),
+  for (s in names(src)[src > 1]) {
+    if (all(smap$evidence_status[smap$sample_id == s] == "evidenced")) next
+    add(sample_id = s, report_key = samples$report_keys[samples$sample_id == s],
+        issue = "spans more than one source workbook",
+        detail = paste(sort(unique(wb$pathway[wb$sample_id == s])), collapse = ";"),
         question = "Are these the same participants, measured for both mediators?")
+  }
 
   ## A label that will not round-trip cleanly is a label that can silently fail
   ## to match its twin in another workbook.
-  odd <- samples$sample_key[grepl("[,;‘’‚“”]|\\s{2,}", samples$sample_key)]
+  odd <- unique(ALL$report_key[grepl("[,;‘’‚“”]|\\s{2,}", ALL$report_key)])
   for (k in odd)
-    add(sample_key = k, issue = "punctuation in the study label",
-        detail = k,
+    add(sample_id = paste(sort(unique(ALL$sample_id[ALL$report_key == k])), collapse = ";"),
+        report_key = k, issue = "punctuation in the study label", detail = k,
         question = "Does this label match the same cohort elsewhere?")
 
   ## Same first author within a year or two, which is where an accidental
@@ -362,13 +630,70 @@ sample_review_queue <- function(samples, ALL) {
   for (i in seq_along(lab)) for (j in seq_along(lab)) {
     if (j <= i || lab[i] != lab[j]) next
     if (abs(samples$year[i] - samples$year[j]) <= 2)
-      add(sample_key = samples$sample_key[i], issue = "same first author, adjacent years",
-          detail = paste(samples$sample_key[i], "and", samples$sample_key[j]),
+      add(sample_id = samples$sample_id[i], report_key = samples$report_keys[i],
+          issue = "same first author, adjacent years",
+          detail = paste(samples$canonical_label[i], "and", samples$canonical_label[j]),
           question = "Are these two reports of one cohort?")
+  }
+
+  ## An asserted merge or split that nobody has evidenced yet is exactly the
+  ## kind of judgement that should not pass unnoticed into a release.
+  for (s in samples$sample_id[samples$n_reports > 1L]) {
+    if (any(smap$evidence_status[smap$sample_id == s] != "evidenced"))
+      add(sample_id = s, report_key = samples$report_keys[samples$sample_id == s],
+          issue = "merge asserted but not evidenced",
+          detail = samples$report_keys[samples$sample_id == s],
+          question = "Do these reports describe one set of participants?")
+  }
+  for (k in unique(ALL$report_key)) {
+    ids <- unique(ALL$sample_id[ALL$report_key == k])
+    if (length(ids) > 1L && any(smap$evidence_status[smap$sample_id %in% ids] != "evidenced"))
+      add(sample_id = paste(sort(ids), collapse = ";"), report_key = k,
+          issue = "split asserted but not evidenced",
+          detail = paste(sort(ids), collapse = ";"),
+          question = "Does this report describe more than one cohort?")
+  }
+
+  ## A superseded report whose participant count disagrees with the cohort's is
+  ## a discrepancy that the structural check deliberately steps around.
+  sup <- ALL[ALL$multiplicity == "superseded_report", , drop = FALSE]
+  for (i in seq_len(nrow(sup))) {
+    nr <- samples$n_reported[samples$sample_id == sup$sample_id[i]]
+    if (length(nr) && !is.na(nr) && nr != sup$n[i])
+      add(sample_id = sup$sample_id[i], report_key = sup$report_key[i],
+          issue = "superseded report disagrees on participant count",
+          detail = sprintf("cohort n = %g, this report n = %g", nr, sup$n[i]),
+          question = "Which participant count describes the analysed cohort?")
   }
 
   if (!length(q)) return(NULL)
   out <- do.call(rbind, q); rownames(out) <- NULL; out
+}
+
+#' The one sentence stating what the analytical unit currently rests on.
+#'
+#' Generated here and asserted verbatim by check_documents(), so the prose and
+#' the registry cannot drift apart: editing the sentence fails the build, and a
+#' change in the evidence rewrites both at once.
+identity_caveat <- function(samples, smap) {
+  n  <- nrow(smap)
+  ne <- sum(smap$evidence_status == "evidenced")
+  nd <- sum(smap$evidence_status == "disputed")
+  nu <- n - ne - nd                       # NOT n - ne: a disputed row is not an
+                                          # unchecked one, and counting it in
+                                          # both places overstates the shortfall
+  if (ne == n && n > 0L)
+    return(paste0("Sample identity is curated in `data/provenance/sample_map.csv`; all ",
+                  n, " report-to-cohort assertions were checked against a named source, ",
+                  "with the evidence, the person who accepted it and the date recorded."))
+  sprintf(paste0("Sample identity is curated in `data/provenance/sample_map.csv`. %d of %d ",
+                 "report-to-cohort assertions have been evidenced against a named source%s; ",
+                 "the remaining %d rest on the author and year printed in the extraction ",
+                 "workbook and have not been checked against the papers. The analytical unit ",
+                 "is therefore derived and has not been externally verified."),
+          ne, n,
+          if (nd) sprintf(" and %d %s disputed", nd, if (nd == 1L) "is" else "are") else "",
+          nu)
 }
 
 ## ---- canonicalisation ------------------------------------------------------

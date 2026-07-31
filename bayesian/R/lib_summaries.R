@@ -145,11 +145,12 @@ STOCHASTIC_PARS <- c("a_new", "b_new", "cprime_new", "ind_new", "total_new")
 
 #' Convergence and sampler diagnostics for one Stan fit.
 #'
-#' `pmed_pop` is deliberately absent from the gate: it is a ratio whose
-#' denominator can approach zero, so its R-hat and ESS are dominated by the tail
-#' behaviour of the estimand rather than by sampler performance. It is reported
-#' with the other pooled quantities and flagged uninterpretable where the total
-#' effect includes zero.
+#' No reported quantity now sits outside the gate. `pmed_pop` was the one
+#' exemption, on the sound argument that a ratio whose denominator can approach
+#' zero has an R-hat dominated by the estimand's tail rather than by sampler
+#' performance. The conclusion that follows from that argument is removal of the
+#' quantity, not exemption of it, so it was removed. See
+#' bayesian/docs/proportion_mediated_removed.md.
 fit_diagnostics <- function(fit, fit_id, cfg, pars = NULL) {
   ds <- fit$diagnostic_summary(quiet = TRUE)
 

@@ -25,15 +25,19 @@ write_methods_doc <- function(R, cfg, lock, path) {
             "validation targets; they are not reported as co-primary findings, and their p values",
             "were not used to arbitrate disagreements with the posterior."), "")
 
-  add(paste("The analytical unit was one independent participant sample, not one publication,",
-            "spreadsheet row or instrument. A sample contributed at most one triplet of",
+  ## The caveat sentence is generated, not written, and check_documents() asserts
+  ## it verbatim. Editing it here without changing the registry fails the build,
+  ## and a change in the evidence rewrites the claim and the check together.
+  add(paste("The intended analytical unit was one participant cohort, not one publication,",
+            "spreadsheet row or instrument. A cohort contributed at most one triplet of",
             "correlations to any pathway. Multiple eligible instruments administered to the same",
             "participants did not increase the number of studies and were not averaged, because an",
             "average describes no defined construct and conceals the dependence induced by shared",
-            "participants. Where a sample supplied more than one eligible instrument, one was",
+            "participants. Where a cohort supplied more than one eligible instrument, one was",
             "selected by a prespecified hierarchy favouring commensurability with the other",
-            "included samples, and the alternative was retained as a replacement sensitivity",
+            "included cohorts, and the alternative was retained as a replacement sensitivity",
             "analysis."), "")
+  add(identity_caveat(lock$samples, lock$sample_map), "")
 
   add(paste("Each included sample contributed three correlations among childhood trauma (X), the",
             "proposed mediator (M) and the psychosis outcome (Y), in the fixed order r(X,M),",
@@ -54,10 +58,11 @@ write_methods_doc <- function(R, cfg, lock, path) {
             "which a hierarchy placed on the three zero-order correlations does not. From each",
             "draw the standardised mediation model M = aX + e, Y = c'X + bM + e was recovered",
             "exactly, giving a = r(X,M), b = [r(M,Y) - r(X,M) r(X,Y)] / [1 - r(X,M)^2],",
-            "c' = [r(X,Y) - r(X,M) r(M,Y)] / [1 - r(X,M)^2], the indirect effect ab, the total",
-            "effect c' + ab = r(X,Y), and the proportion mediated ab / (c' + ab). These were",
-            "computed for the population-average correlation matrix, for each study, and for a",
-            "new-study predictive distribution."), "")
+            "c' = [r(X,Y) - r(X,M) r(M,Y)] / [1 - r(X,M)^2], the indirect effect ab and the total",
+            "effect c' + ab = r(X,Y). These were computed for the population-average correlation",
+            "matrix, for each study, and for a new-study predictive distribution. The proportion",
+            "mediated ab / (c' + ab) was not computed: it is unbounded and heavy-tailed as the",
+            "total effect approaches zero, so it is not a usable estimand at these study counts."), "")
 
   add(paste("The **reference layer** was fitted in `brms` and models the three Fisher-z",
             "correlations directly, with the known sampling covariance supplied through `fcor()`",

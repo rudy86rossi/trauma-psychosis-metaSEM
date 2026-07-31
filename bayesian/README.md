@@ -112,8 +112,14 @@ parameterisation quantity rather than a scientific estimand.
 ## Validation
 
 - **Formal rank-based SBC** over six prespecified scenarios. Screening level;
-  conditional on the plug-in sampling covariance matrices. Failed fits stay in
-  the denominator.
+  conditional on the plug-in sampling covariance matrices. Every attempted fit
+  stays in the audit accounting with its status. The primary uniformity
+  denominator comprises the diagnostically acceptable fits, because a rank drawn
+  from a chain that did not converge cannot distinguish a miscalibrated model
+  from a broken sampler; the same tests are repeated over all available ranks
+  and reported as sensitivity evidence, so the exclusion is visible rather than
+  flattering. Released ranks support recomputing every uniformity analysis
+  without refitting; the draws behind an individual rank are not retained.
 - **Posterior predictive checks in both forms**: conditional on the fitted study
   effects, and with fresh random effects. A conditional check alone can look
   satisfactory because the random effects have absorbed an outlier.

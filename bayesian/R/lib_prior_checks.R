@@ -146,6 +146,28 @@ power_scaling <- function(cfg, fit, fit_id, variables = c("alpha", "tau", "beta"
   out
 }
 
+#' Classify each archived power-scaling row as flagged, unflagged or
+#' inapplicable.
+#'
+#' priorsense uses three states and the generated prose used two. "-" means the
+#' quantity was evaluated and not flagged. A BLANK diagnosis means it could not
+#' be evaluated: `d_z` is a moderator contrast, and an intercept-only model has
+#' no contrast to span, so priorsense returns blank prior and likelihood
+#' sensitivities for it. Counting a flagged row as `diagnosis != "-"` therefore
+#' counted every non-evaluable row as a positive flag, which is how the release
+#' came to report 164 of 342 flagged instead of 146 of 324 evaluable.
+#'
+#' NA is treated as blank rather than as its own case: read.csv gives NA for an
+#' empty unquoted field and "" for an empty quoted one, and the distinction is an
+#' artefact of the writer, not a fact about the diagnostic.
+powerscale_status <- function(ps) {
+  d <- ps$diagnosis
+  blank <- is.na(d) | !nzchar(trimws(d))
+  ps$ps_status <- ifelse(blank, "inapplicable",
+                         ifelse(trimws(d) == "-", "unflagged", "flagged"))
+  ps
+}
+
 #' Collate the prior-predictive verdicts and fail the release if any criterion
 #' was not met.
 #'

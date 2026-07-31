@@ -164,15 +164,13 @@ write_results_doc <- function(R, cfg, lock, path) {
             "prior-informed; the tau posteriors are reported in `tables/heterogeneity.csv` so that",
             "claim can be checked rather than taken on trust."), "")
 
-  pm <- R$pooled[R$pooled$moderator == "null" & R$pooled$quantity == "pmed", ]
-  fin <- sum(is.finite(pm$q_lo) & is.finite(pm$q_hi))
-  add(sprintf(paste("**Proportion mediated.** Finite central 95 per cent credible intervals were",
-                    "obtained in %d of %d pathways. The ratio ab / total remains mathematically",
-                    "unbounded and can be heavy-tailed when the total effect approaches zero, so a",
-                    "finite central interval is not evidence that the quantity is well behaved. It",
-                    "is reported only where the total effect is separated from zero, and is",
-                    "descriptive rather than an estimand of interest in its own right."),
-              fin, nrow(pm)), "")
+  add(paste("**Proportion mediated is not reported.** The ratio ab / total is mathematically",
+            "unbounded and heavy-tailed as the total effect approaches zero, so a finite central",
+            "interval is not evidence that the quantity is well behaved and a diagnostic exemption",
+            "would not make it one. It is not computed, tabulated or interpreted anywhere in this",
+            "release. Percentages mediated reported in the descriptive systematic review are a",
+            "separate summary of the individual published analyses and are not estimates from",
+            "these models. See `docs/proportion_mediated_removed.md`."), "")
 
   # --- 3. pooled quantities
   add("## 3. Pooled mediation quantities", "")
@@ -403,14 +401,28 @@ write_results_doc <- function(R, cfg, lock, path) {
 
   if (!is.null(R$power_scaling) && nrow(R$power_scaling)) {
     ps <- R$power_scaling
-    flagged <- ps[ps$diagnosis != "-", ]
-    add("", sprintf(paste("**Prior and likelihood power scaling.** Sensitivity was computed for %d",
-                          "parameters across the primary fits. %d were flagged, of which %d were",
+    ## Three states, not two. priorsense returns "-" for an evaluated quantity
+    ## with no flag, and an EMPTY diagnosis for a quantity it could not evaluate
+    ## at all: d_z has no contrast to span in an intercept-only model, so those
+    ## rows carry blank sensitivities. Testing `!= "-"` counted every one of
+    ## those non-evaluable rows as a positive flag, which inflated the reported
+    ## total. A blank is not an unflagged row either, so it is reported
+    ## separately rather than folded into the denominator.
+    ps <- powerscale_status(ps)
+    evaluable <- ps[ps$ps_status != "inapplicable", ]
+    flagged   <- ps[ps$ps_status == "flagged", ]
+    inapp     <- sum(ps$ps_status == "inapplicable")
+    add("", sprintf(paste("**Prior and likelihood power scaling.** Sensitivity was archived for %d",
+                          "quantities across the primary fits, of which %d were evaluable; %d rows",
+                          "were structurally inapplicable, being the moderator contrast in an",
+                          "intercept-only model, which has no contrast to span. Of the evaluable",
+                          "quantities %d were flagged and %d were not, and %d of the flagged were",
                           "heterogeneity parameters. This asks a different question from the prior",
                           "grid: the grid refits at other prior widths and asks whether the",
                           "conclusion moves, whereas power scaling asks which of the prior and the",
                           "likelihood is driving each posterior."),
-                    nrow(ps), nrow(flagged),
+                    nrow(ps), nrow(evaluable), inapp,
+                    nrow(flagged), nrow(evaluable) - nrow(flagged),
                     sum(grepl("^tau", flagged$variable))), "")
     if (nrow(flagged))
       add(paste("A parameter flagged as prior-dominated is one the data barely inform, so its",
@@ -467,8 +479,10 @@ write_results_doc <- function(R, cfg, lock, path) {
               "values are correlated across parameters and across scenarios, so the binomial",
               "figure above is a reference point rather than a formal guarantee. Raw truths,",
               "ranks and per-replicate diagnostics are archived in",
-              "`diagnostics/sbc_ranks_raw.csv`, so every rank can be recomputed without",
-              "refitting."), "")
+              "`diagnostics/sbc_ranks_raw.csv`, so every rank-uniformity analysis above,",
+              "including the primary and all-ranks comparison, can be recomputed from the",
+              "released ranks without refitting. The posterior draws each rank was computed",
+              "from are not retained, so an individual rank cannot be rebuilt from that file."), "")
   }
 
   # --- 8. limitations

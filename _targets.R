@@ -53,10 +53,16 @@ list(
 
   tar_target(corrections_file, "data/provenance/corrections.csv", format = "file"),
   tar_target(quality_file, "data/provenance/quality_scores.csv", format = "file"),
+  ## The curated identity files are INPUTS, not outputs. Declaring them means a
+  ## curator's split, merge or evidence entry invalidates the run that reported
+  ## the previous assignment, instead of leaving a promoted bundle whose
+  ## documents no longer match the assertions they were built from.
+  tar_target(sample_map_file, "data/provenance/sample_map.csv", format = "file"),
+  tar_target(samples_file, "data/provenance/samples.csv", format = "file"),
   tar_target(stan_file, "bayesian/stan/masem_valid.stan", format = "file"),
 
   tar_target(lock, {
-    corrections_file; quality_file          # declare the dependency
+    corrections_file; quality_file; sample_map_file; samples_file
     build_data_lock(cfg, ".")
   }),
   tar_target(analysis_table, write_data_lock(lock, "."), format = "file"),

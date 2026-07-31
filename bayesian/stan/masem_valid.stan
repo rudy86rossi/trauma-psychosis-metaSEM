@@ -114,7 +114,7 @@ generated quantities {
   // direct analogue of the TSSEM estimand and is the primary quantity.
   array[NC] vector[3] rho_pop;
   vector[NC] a_pop;    vector[NC] b_pop;    vector[NC] cprime_pop;
-  vector[NC] ind_pop;  vector[NC] total_pop; vector[NC] pmed_pop;
+  vector[NC] ind_pop;  vector[NC] total_pop;
 
   // ZERO-ORDER coordinates on the Fisher-z scale at each contrast value, and
   // their change across the reported contrast.
@@ -185,7 +185,6 @@ generated quantities {
       vector[5] pth = rho_to_path(rho_pop[c]);
       a_pop[c] = pth[1];  b_pop[c] = pth[2];  cprime_pop[c] = pth[3];
       ind_pop[c] = pth[4];  total_pop[c] = pth[5];
-      pmed_pop[c] = pth[4] / pth[5];
 
       vector[3] eta_new;
       for (j in 1 : 3) {

@@ -3,22 +3,20 @@
 # The data lock: upstream workbooks, plus the committed ledger and quality
 # scores, become one canonical analysis table with a reproducible hash.
 #
-# The analytical unit is one independent participant sample. A sample
-# contributes at most one correlation triplet to a pathway. Where a sample
-# supplied more than one eligible instrument, one is chosen by the configured
-# priority and the other is retained as a REPLACEMENT sensitivity analysis;
-# instruments are never averaged, because an average describes no defined
-# construct and conceals the dependence induced by shared participants.
+# The analytical unit is one participant cohort, as asserted in the curated
+# sample map. A cohort contributes at most one correlation triplet to a pathway.
+# Where a cohort supplied more than one eligible instrument, one is chosen by the
+# configured priority and the other is retained as a REPLACEMENT sensitivity
+# analysis; instruments are never averaged, because an average describes no
+# defined construct and conceals the dependence induced by shared participants.
 #
-# `paste(studyID, year)` is the sample KEY: it is what groups effect rows into
-# an independent sample, and it is a heuristic. It cannot separate two cohorts
-# published by one author in one year, and it cannot recognise one cohort
-# appearing under two labels. data/provenance/samples.csv reconciles that key
-# with stable identifiers, enforces the invariants the key cannot (see
-# build_sample_registry), and raises the cases only a human can settle in
-# sample_review_queue.csv. Every row there is currently `derived_unverified`,
-# so the analytical unit is derived and not yet externally verified. Nothing in
-# this release may describe it otherwise until an author signs it off.
+# `paste(studyID, year)` is a REPORT LABEL, not an identifier. It survives as
+# `report_key`, for effect_id and for messages, and it decides nothing. Identity
+# comes from data/provenance/sample_map.csv, which maps each source workbook row
+# to a cohort, and it is applied before instrument selection so that a collision
+# the curator has not accounted for is still visible to the gates. See the
+# curated-sample-identity section of lib_provenance.R for why the previous
+# ordering made both structural gates unreachable.
 # =============================================================================
 
 suppressPackageStartupMessages({
@@ -129,19 +127,34 @@ lock_sources <- function(cfg, root = ".",
 ## ---- step 2: pathway extraction -------------------------------------------
 
 build_pathway <- function(cfg, key, sheets) {
-  p   <- cfg$pathways[[key]]
-  src <- p$source
-  cm  <- COLMAP[[src]]
-  raw <- sheets[[src]]
-  raw <- as_num(raw, c("n", cm$age, cm$female, cm$nos, "r_XM", "r_MY", "r_XY"))
+  p    <- cfg$pathways[[key]]
+  src  <- p$source
+  cm   <- COLMAP[[src]]
+  spec <- cfg$inputs[[src]]
+  book <- basename(spec$path)
+  shet <- as.character(spec$sheet)
+
+  ## The fingerprint is taken from the locked sheet as read, before as_num()
+  ## coerces types, so it is a statement about the source row rather than about
+  ## this function's parsing of it.
+  locked <- sheets[[src]]
+  raw <- as_num(locked, c("n", cm$age, cm$female, cm$nos, "r_XM", "r_MY", "r_XY"))
 
   keep <- eval(PATH_FILTER[[key]], raw, parent.frame()) & complete_rows(raw)
   keep[is.na(keep)] <- FALSE
-  d <- raw[keep, , drop = FALSE]
+  idx <- which(keep)
+  d <- raw[idx, , drop = FALSE]
 
   data.frame(
     pathway    = key,
     label      = p$label,
+    ## Where this row came from. A cohort is identified by position in its
+    ## source workbook, because two cohorts can agree on every semantic field.
+    source_workbook = book,
+    source_sheet    = shet,
+    source_row      = idx,
+    source_effect_id = source_effect_id(book, shet, idx, key),
+    row_fingerprint  = vapply(idx, function(i) row_fingerprint(locked, i), character(1)),
     studyID    = trimws(as.character(d[[cm$id]])),
     year       = suppressWarnings(as.integer(d[[cm$year]])),
     n          = as.numeric(d$n),
@@ -161,7 +174,7 @@ build_pathway <- function(cfg, key, sheets) {
 
 ## ---- step 3: exclusions, sample identity, instrument choice ---------------
 
-apply_registry <- function(cfg, df) {
+apply_registry <- function(cfg, df, smap) {
   key <- df$pathway[1]
 
   ## Exclusions, by explicit decision.
@@ -192,30 +205,50 @@ apply_registry <- function(cfg, df) {
          paste(paste(df$studyID[npd], df$year[npd]), collapse = ", "),
          ". Add to EXCLUSIONS with a documented reason before proceeding.")
 
-  ## Sample identity. author + year IS the grouping key, and it is a heuristic:
-  ## rows sharing it are treated as one sample and reconciled against the
-  ## registry, which enforces the invariants this key cannot and refers the rest
-  ## to review. Two rows sharing a key within one pathway are resolved below by
-  ## instrument priority, on the assumption that they are two measurements of
-  ## one sample; build_sample_registry() raises if that assumption cannot hold.
-  df$sample_key <- paste(df$studyID, df$year)
-  dup <- df$sample_key[duplicated(df$sample_key) & !df$excluded]
-  if (length(dup))
-    message("  repeated sample key in ", key, ": ", paste(unique(dup), collapse = ", "),
-            " (resolved by instrument priority)")
+  ## Sample identity, BEFORE any row is demoted. `paste(studyID, year)` is a
+  ## label for a report and decides nothing; the curated map says which cohort
+  ## this row's participants are, and it is applied here so that an undeclared
+  ## collision survives to be caught by gate_sample_identity() rather than being
+  ## resolved out of existence by instrument priority.
+  df$report_key <- paste(df$studyID, df$year)
+  df <- apply_sample_map(df, smap)
 
-  ## One triplet per independent sample.
+  ## One triplet per cohort. Demotion happens ONLY inside a group the curator
+  ## has declared to be one cohort measured with more than one instrument. That
+  ## declaration is what licenses it; two rows that merely collide are left
+  ## alone, which is what makes the collision gate reachable.
+  live <- !df$excluded
   df$analysis_role <- ifelse(df$excluded, "excluded", "primary")
+  df$analysis_role[live & df$multiplicity == "superseded_report"] <- "duplicate_report"
+
   pri <- unlist(cfg$instrument_priority)
-  for (sk in unique(df$sample_key)) {
-    idx <- which(df$sample_key == sk & !df$excluded)
+  for (sid in unique(df$sample_id[live])) {
+    idx <- which(live & df$sample_id == sid & df$multiplicity == "alternative_instrument")
     if (length(idx) <= 1) next
-    keep_i <- idx[which.min(instrument_rank(df$instrument[idx], pri))]
-    df$analysis_role[setdiff(idx, keep_i)] <- "sensitivity_alternative_instrument"
+    rk <- instrument_rank(df$instrument[idx], pri)
+    ## which.min() takes the first on a tie, which makes the primary triplet
+    ## depend on workbook row order. Two unranked instruments are a gap in the
+    ## configuration, not something to settle by position.
+    if (sum(rk == min(rk)) > 1L)
+      stop(key, ": instrument priority does not separate ", sid, " (",
+           paste(df$instrument[idx][rk == min(rk)], collapse = ", "),
+           "). Extend instrument_priority in config/analysis.yml.")
+    df$analysis_role[setdiff(idx, idx[which.min(rk)])] <- "sensitivity_alternative_instrument"
+    message("  ", key, ": ", sid, " supplied ", length(idx), " declared instruments; ",
+            df$instrument[idx][which.min(rk)], " is primary.")
   }
-  df$effect_id <- sprintf("%s:%s:%s", df$pathway, gsub("[^A-Za-z0-9]", "", df$sample_key),
+
+  ## The effect identifier keeps its historical form, so every identifier already
+  ## in the canonical table and in every LOSO fit_id keeps its value. Its
+  ## sanitisation is lossy, and a curated split within one pathway and instrument
+  ## produces two rows that reduce to one string, so the cohort is appended where
+  ## and ONLY where that would otherwise collide. No row in the current release
+  ## collides, so nothing is renamed.
+  df$effect_id <- sprintf("%s:%s:%s", df$pathway, gsub("[^A-Za-z0-9]", "", df$report_key),
                           ifelse(is.na(df$instrument), "NA",
                                  gsub("[^A-Za-z0-9]", "", df$instrument)))
+  clash <- df$effect_id %in% df$effect_id[duplicated(df$effect_id)]
+  df$effect_id[clash] <- paste0(df$effect_id[clash], ":", df$sample_id[clash])
   df
 }
 

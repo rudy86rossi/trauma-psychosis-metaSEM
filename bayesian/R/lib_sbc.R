@@ -158,9 +158,11 @@ run_sbc_scenario <- function(cfg, scenario, lock, n_datasets = NULL) {
     dz_true <- sbc_truth_dz(theta, base$xc)
     if (base$P) truths <- c(truths, setNames(dz_true, sprintf("d_z[%d]", 1:3)))
 
-    ## The truth is stored beside its rank so the archived file is a complete,
-    ## independently recomputable record: a reader can rebuild every rank from
-    ## sbc_ranks_raw.csv without rerunning 600 fits.
+    ## The truth is stored beside its rank so the archived file supports every
+    ## rank-uniformity analysis without rerunning 600 fits. It does NOT support
+    ## rebuilding an individual rank: that needs the posterior draws the rank was
+    ## computed from, and those are deliberately not retained. An earlier version
+    ## of this comment, and of the generated results, claimed otherwise.
     rows[[r]] <- do.call(rbind, lapply(names(truths), function(nm)
       data.frame(scenario = scenario$id, replicate = r, parameter = nm,
                  truth = unname(truths[[nm]]),

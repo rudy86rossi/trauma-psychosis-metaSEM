@@ -12,36 +12,45 @@
 build_data_lock <- function(cfg, root = ".") {
   locked <- lock_sources(cfg, root)
 
-  ## ---- pathways, exclusions, instrument choice ----------------------------
+  ## ---- curated identity, read and validated BEFORE anything is selected ---
+  ## MAP -> VALIDATE -> INSTRUMENT SELECTION -> GATES. The map owns identity, so
+  ## it is read before a single row is demoted or a gate evaluated. Previously
+  ## identity was minted from paste(studyID, year), used to demote rows, and only
+  ## then joined to the registry, which made both structural gates unreachable.
+  smap_path <- file.path(root, "data/provenance/sample_map.csv")
+  reg_path  <- file.path(root, "data/provenance/samples.csv")
+  smap <- read_sample_map(smap_path)
+  reg  <- read_sample_registry(reg_path)
+  validate_sample_map(smap, reg, smap_path, reg_path)
+
+  ## ---- pathways, exclusions, identity, instrument choice ------------------
   paths <- list()
   for (key in PATH_NAMES(cfg)) {
     df <- build_pathway(cfg, key, locked$sheets)
     if (!nrow(df)) stop("Pathway ", key, " selected no rows.")
-    paths[[key]] <- apply_registry(cfg, df)
+    paths[[key]] <- apply_registry(cfg, df, smap)
   }
 
   ALL <- do.call(rbind, paths); rownames(ALL) <- NULL
 
+  ## ---- structural gates on the curated identity ---------------------------
+  gate_sample_identity(ALL, smap, reg)
+
   ## ---- registries ---------------------------------------------------------
-  ## samples.csv: one row per independent participant sample.
+  ## samples.csv: one row per cohort. It owns the identifiers and their lineage,
+  ## and DERIVES its verification status from the mapping rows.
   ## effects.csv: one row per pathway, instrument and effect estimate.
   ## Blose DES-II and PDEQ share a sample_id and differ by effect_id and role.
-  ## The registry is READ, not merely written. It owns the identifiers, so they
-  ## stay stable when a workbook is revised, and it enforces the structural
-  ## invariants the author-year heuristic cannot. Cases needing human judgement
-  ## are surfaced in the review queue rather than silently resolved.
-  reg <- build_sample_registry(ALL, file.path(root, "data/provenance/samples.csv"))
-  samples <- reg$samples
-  review_queue <- reg$review_queue
+  ## Cases needing human judgement are surfaced in the review queue.
+  regout <- build_sample_registry(ALL, smap, reg)
+  samples <- regout$samples
+  review_queue <- regout$review_queue
 
-  ALL$sample_id <- samples$sample_id[match(ALL$sample_key, samples$sample_key)]
-  if (anyNA(ALL$sample_id))
-    stop("Effect rows with no sample_id after registry join: ",
-         paste(unique(ALL$sample_key[is.na(ALL$sample_id)]), collapse = ", "))
-
-  effects <- ALL[, c("effect_id", "sample_id", "pathway", "label", "studyID", "year", "n",
+  effects <- ALL[, c("effect_id", "sample_id", "map_id", "source_effect_id", "pathway",
+                     "label", "studyID", "year", "n",
                      "r_XM", "r_XY", "r_MY", "min_eigen", "age", "female", "nos", "clinical",
-                     "instrument", "analysis_role", "excluded", "exclusion_status",
+                     "instrument", "multiplicity", "mapping_basis",
+                     "analysis_role", "excluded", "exclusion_status",
                      "exclusion_reason")]
   ## min_eigen is a diagnostic, not an input: it exists so a non-positive-definite
   ## matrix can be caught and named. Its last digits are LAPACK's, and they differ
@@ -53,12 +62,16 @@ build_data_lock <- function(cfg, root = ".") {
   ## canonical analysis table never contained this column, so no hash changes.
   effects$min_eigen <- round(effects$min_eigen, 10)
 
-  ## ---- gate: one triplet per sample per pathway ---------------------------
+  ## ---- gate: one triplet per cohort per pathway ---------------------------
+  ## A POST-CONDITION of selection now, not a restatement of it. Selection only
+  ## touches groups the curator declared to be one cohort measured twice, so this
+  ## catches a fault in the selection code itself rather than a fact about the
+  ## data, which gate_sample_identity() has already settled.
   prim <- ALL[ALL$analysis_role == "primary", ]
   dupe <- prim[duplicated(paste(prim$pathway, prim$sample_id)), ]
   if (nrow(dupe))
-    stop("A sample contributes more than one primary triplet: ",
-         paste(unique(paste(dupe$pathway, dupe$sample_key)), collapse = ", "))
+    stop("A cohort contributes more than one primary triplet: ",
+         paste(unique(paste(dupe$pathway, dupe$sample_id)), collapse = ", "))
 
   ## ---- analysis sets ------------------------------------------------------
   ANALYSIS <- lapply(PATH_NAMES(cfg), function(k) {
@@ -126,7 +139,7 @@ build_data_lock <- function(cfg, root = ".") {
 
   list(analysis = ANALYSIS, alternative = ALTERNATIVE, mods = mods,
        vz_chol = VZ, vz_chol_alt = VZ_ALT, vz_chol_weighted = VZ_W,
-       samples = samples, review_queue = review_queue,
+       samples = samples, sample_map = smap, review_queue = review_queue,
        effects = effects, support = SUPPORT, reportability = REPORT,
        vz_comparison = vzc, hashes = locked$hashes, exclusions = EXCLUSIONS,
        ledger = locked$ledger, quality = locked$quality)
@@ -150,21 +163,23 @@ write_data_lock <- function(lock, root = ".") {
 
   prov <- file.path(root, "data", "provenance")
 
-  ## samples.csv is a SOURCE table, so the pipeline seeds it once and never
-  ## writes over it again. Overwriting would silently discard a reviewer's
-  ## verification entries on the next run, which is the opposite of what a
-  ## curated registry is for. Changes to it are made by hand and reviewed.
-  spath <- file.path(prov, "samples.csv")
-  if (!file.exists(spath))
-    write.csv(lock$samples, spath, row.names = FALSE, na = "")
+  ## samples.csv and sample_map.csv are SOURCE tables. The pipeline never writes
+  ## over either, because doing so would silently discard a curator's identity
+  ## and evidence entries on the next run, which is the opposite of what they are
+  ## for. They are seeded once by bayesian/tools/seed_sample_map.R and thereafter
+  ## edited by hand and reviewed. The DERIVED half of the registry is published
+  ## separately so a reader can see it without it being mistaken for an input.
+  write.csv(lock$samples, file.path(prov, "samples_derived.csv"),
+            row.names = FALSE, na = "")
 
   ## The review queue IS derived, so it is regenerated every run. An empty queue
   ## is written as an empty file rather than omitted, so its absence always
   ## means the lock did not run, never that there was nothing to review.
   rq <- lock$review_queue
   if (is.null(rq))
-    rq <- data.frame(sample_key = character(0), issue = character(0),
-                     detail = character(0), question = character(0))
+    rq <- data.frame(sample_id = character(0), report_key = character(0),
+                     issue = character(0), detail = character(0),
+                     question = character(0))
   write.csv(rq, file.path(prov, "sample_review_queue.csv"), row.names = FALSE, na = "")
 
   write.csv(lock$effects,       file.path(prov, "effects.csv"), row.names = FALSE, na = "")
@@ -173,17 +188,21 @@ write_data_lock <- function(lock, root = ".") {
   write.csv(lock$support,       file.path(prov, "contrast_support.csv"), row.names = FALSE, na = "")
   write.csv(lock$vz_comparison, file.path(prov, "vz_comparison.csv"), row.names = FALSE, na = "")
 
+  ## Only declared multi-instrument groups belong here. A superseded report is a
+  ## different decision and is not an instrument choice.
   ic <- do.call(rbind, lapply(names(lock$analysis), function(k) {
-    e <- lock$effects[lock$effects$pathway == k & lock$effects$analysis_role !=
-                        "excluded" & !is.na(lock$effects$instrument), ]
+    e <- lock$effects[lock$effects$pathway == k & !is.na(lock$effects$instrument) &
+                        lock$effects$analysis_role %in%
+                          c("primary", "sensitivity_alternative_instrument"), ]
     e <- e[e$sample_id %in% e$sample_id[duplicated(e$sample_id)], ]
     if (!nrow(e)) return(NULL)
-    e[, c("pathway", "sample_id", "studyID", "year", "instrument", "analysis_role", "effect_id")]
+    e[, c("pathway", "sample_id", "studyID", "year", "instrument", "multiplicity",
+          "analysis_role", "effect_id")]
   }))
   if (is.null(ic)) ic <- data.frame(pathway = character(0), sample_id = character(0),
                                     studyID = character(0), year = integer(0),
-                                    instrument = character(0), analysis_role = character(0),
-                                    effect_id = character(0))
+                                    instrument = character(0), multiplicity = character(0),
+                                    analysis_role = character(0), effect_id = character(0))
   write.csv(ic, file.path(prov, "instrument_choices.csv"), row.names = FALSE, na = "")
 
   path
