@@ -96,6 +96,10 @@ write_results_doc <- function(R, cfg, lock, path) {
 
   # --- 1. headline
   add("## 1. What the analysis found", "")
+  ## The results document reports k per pathway and counts cohorts throughout, so
+  ## it states what a cohort currently rests on before it reports anything else.
+  ## check_documents() asserts this sentence verbatim in both documents.
+  add(identity_caveat(lock$samples, lock$sample_map), "")
   add(sprintf(paste("The matched frequentist meta-regressions produced %d of %d moderator slopes at",
                     "p < 0.05, across %d of %d pathway-by-moderator models. These are retained as",
                     "internal validation targets only. They are not co-primary, and their p values",

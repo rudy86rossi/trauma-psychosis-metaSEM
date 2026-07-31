@@ -28,8 +28,14 @@ write_methods_doc <- function(R, cfg, lock, path) {
   ## The caveat sentence is generated, not written, and check_documents() asserts
   ## it verbatim. Editing it here without changing the registry fails the build,
   ## and a change in the evidence rewrites the claim and the check together.
+  ## The first sentence carries its own qualification. check_documents() applies
+  ## a proximity rule to any assertion about sample independence, and the
+  ## generated caveat below is deliberately excluded from discharging it: a
+  ## required disclosure elsewhere in the document is not a licence for an
+  ## unqualified claim here.
   add(paste("The intended analytical unit was one participant cohort, not one publication,",
-            "spreadsheet row or instrument. A cohort contributed at most one triplet of",
+            "spreadsheet row or instrument, and for most included reports that identity is",
+            "unevidenced against the source papers. A cohort contributed at most one triplet of",
             "correlations to any pathway. Multiple eligible instruments administered to the same",
             "participants did not increase the number of studies and were not averaged, because an",
             "average describes no defined construct and conceals the dependence induced by shared",

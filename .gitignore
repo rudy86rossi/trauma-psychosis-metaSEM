@@ -1,6 +1,9 @@
 # Generated analysis output. Only promoted, verified bundles are committed, and
 # they are committed explicitly with `git add -f` after the release gates pass.
 _targets/
+# A previous run's store, kept aside so a rerun cannot silently reuse it
+# and the audited bundle stays recoverable without a checkout.
+_targets_archive_*/
 bayesian/results/_staging/
 bayesian/results/**/draws/
 
