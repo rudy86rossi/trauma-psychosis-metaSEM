@@ -21,9 +21,21 @@
 #   are reported so the reader can see that.
 #
 # Every fit contributes the same number of retained draws, the thinning rule is
-# fixed before any rank distribution is inspected, ties are broken at random,
-# and fits that fail or breach a diagnostic threshold stay in the denominator.
+# fixed before any rank distribution is inspected, and ties are broken at random.
+#
+# Every attempted fit is RECORDED with its status. Fits that failed or breached a
+# diagnostic threshold are excluded from the PRIMARY uniformity test, because a
+# rank drawn from a chain that did not converge cannot distinguish a
+# miscalibrated model from a broken sampler; the same tests are repeated over all
+# ranks and reported as sensitivity evidence, so the exclusion is visible rather
+# than flattering. An earlier version of this header claimed such fits stayed in
+# the denominator while the code excluded them.
 # =============================================================================
+
+## The parameters whose ranks the calibration audit tests, and therefore the only
+## ones whose convergence bears on whether a rank is usable. Deliberately
+## narrower than GATED_PARS in lib_summaries.R: see the note at the call site.
+SBC_GATED_PARS <- c("alpha", "tau", "beta", "d_z", "lp__")
 
 #' One prior draw of the parameters, on the model's own scale.
 sbc_draw_prior <- function(cfg, S, P, priors, beta_unit_sd) {
@@ -120,7 +132,21 @@ run_sbc_scenario <- function(cfg, scenario, lock, n_datasets = NULL) {
                               stringsAsFactors = FALSE)
       next
     }
-    dg <- fit_diagnostics(fit, "sbc", cfg)
+    ## Gate on the parameters whose RANKS are being tested, not on everything the
+    ## release gate audits.
+    ##
+    ## The release gate covers the study random effects and every pooled
+    ## quantity, because a reported result depends on them. Applying that scope
+    ## here would exclude a replicate from the primary rank test because one
+    ## study's random effect happened to have a bulk ESS of 380, which says
+    ## nothing whatever about whether the rank of alpha[1] is valid. That would
+    ## change the calibration audit for reasons unrelated to calibration, and
+    ## inflate the excluded count in a way a reader could not interpret.
+    ##
+    ## The question here is narrow and specific: can this fit's draws be trusted
+    ## for the quantities whose ranks enter the uniformity test? So those, and
+    ## lp__, are exactly what is checked.
+    dg <- fit_diagnostics(fit, "sbc", cfg, pars = SBC_GATED_PARS)
     ok <- diagnostics_pass(dg, cfg)
 
     dr <- as.data.frame(fit$draws(format = "df"))
