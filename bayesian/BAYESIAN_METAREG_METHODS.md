@@ -3,7 +3,7 @@
 Prepared by ricardotwumasi. British English throughout. Results are in
 `BAYESIAN_METAREG_RESULTS.md`.
 
-Generated from `results/run_81eb51ee5a60/`. Version numbers and scale constants are read from the run manifest and `config/analysis.yml`.
+Generated from `results/run_aed067c558c9/`. Version numbers and scale constants are read from the run manifest and `config/analysis.yml`.
 
 ## Methods text for the manuscript
 
@@ -104,9 +104,11 @@ The first difference has a single identifiable cause: applying the delta method 
 
 ## Validation
 
-**Simulation-based calibration.** Formal rank-based SBC (Talts et al. 2018) over 6 prespecified scenarios of 100 simulated datasets each, exercising the intercept-only code path, continuous and binary moderation, the smallest and largest number of studies, contrasting sampling-covariance structures and a clamped reporting contrast. Truth was drawn from the prior and data from the joint model at the real design; the rank of each truth among 500 retained posterior draws was recorded. Thinning was fixed before any rank distribution was inspected and ties were broken at random.
+**Simulation-based calibration.** Formal rank-based SBC (Talts et al. 2018) over 6 prespecified scenarios, 100 datasets simulated per scenario, exercising the intercept-only code path, continuous and binary moderation, the smallest and largest number of studies, contrasting sampling-covariance structures and a clamped reporting contrast. Truth was drawn from the prior and data from the joint model at the real design; the rank of each truth among 500 retained posterior draws was recorded. Thinning was fixed before any rank distribution was inspected and ties were broken at random.
 
-This is a screening-level check, not high-powered proof of calibration, and it is conditional on the plug-in sampling covariance matrices: it validates the implemented likelihood, the generated quantities and the sampler given those matrices, not the uncertainty arising from estimating them from participant-level data. Fits that failed or breached a diagnostic threshold remain in the denominator.
+The primary rank-uniformity test uses the 97 to 100 datasets per scenario whose fit met every diagnostic threshold. A rank taken from a fit that did not converge is not a draw from the posterior the model defines, so it cannot separate a miscalibrated model from a failed sampler. Excluding such fits silently would be the opposite error, because the hardest replicates are the likeliest to fail, so all 600 attempted fits are retained in the audit table with their status, and the same tests are repeated over all ranks and reported as sensitivity evidence.
+
+This is a screening-level check, not high-powered proof of calibration, and it is conditional on the plug-in sampling covariance matrices: it validates the implemented likelihood, the generated quantities and the sampler given those matrices, not the uncertainty arising from estimating them from participant-level data.
 
 
 **Posterior predictive checks** were computed in both forms for every pathway: conditional on the fitted study effects, and with fresh random effects. Both are archived because a conditional check alone can look satisfactory simply because the study-level random effects have absorbed an outlying study. Coordinate-wise residuals, study-level Mahalanobis discrepancies and per-study posterior predictive p values are archived alongside.
@@ -120,10 +122,10 @@ This is a screening-level check, not high-powered proof of calibration, and it i
 | --- | --- |
 | R | R version 4.4.2 (2024-10-31) |
 | CmdStan | 2.36.0 |
-| Analysis identifier | 81eb51ee5a60 |
-| Source commit | 6236aabc5037 |
+| Analysis identifier | aed067c558c9 |
+| Source commit | f64421c4210b |
 | Locked analysis table | 6aa4705709eb0db8 |
-| Configuration | 12e16627fdb8e5d4 |
+| Configuration | 443ca6cbd2f7e8cf |
 | Stan source | 4460ab7800024b71 |
 | renv lockfile | 4e0bec03ba9bef9e |
 
@@ -133,7 +135,7 @@ The analysis identifier is derived deterministically from the frozen source comm
 The whole analysis is one `targets` graph. Outputs are written to a staging area and promoted atomically only after every gate passes, with the run manifest written last, so an interrupted attempt cannot resemble a finished release. There is no second, sequential driver.
 
 
-The fit plan contained 577 model specifications with stable identifiers. The release gate requires exact set equality between the expected and completed identifiers; the expected count is derived from the plan and is not recorded as a constant anywhere.
+The fit plan contained 575 model specifications with stable identifiers. The release gate requires exact set equality between the expected and completed identifiers; the expected count is derived from the plan and is not recorded as a constant anywhere.
 
 
 No modified source workbook is committed. The only binary inputs are the upstream extraction workbooks, and every departure from them is a row in `data/provenance/corrections.csv` or `data/provenance/quality_scores.csv`. The build verifies the upstream hash, requires each correction to address exactly one cell holding exactly the value it claims to replace, and verifies the row fingerprint before writing.
