@@ -43,6 +43,15 @@ build_data_lock <- function(cfg, root = ".") {
                      "r_XM", "r_XY", "r_MY", "min_eigen", "age", "female", "nos", "clinical",
                      "instrument", "analysis_role", "excluded", "exclusion_status",
                      "exclusion_reason")]
+  ## min_eigen is a diagnostic, not an input: it exists so a non-positive-definite
+  ## matrix can be caught and named. Its last digits are LAPACK's, and they differ
+  ## between platforms. Simpson 2020 comes out as 0.519788893624411 on macOS and
+  ## ...412 on Linux, which is enough to make the committed registry differ from a
+  ## rebuild and to fail the "build left no tracked file modified" gate. Rounding
+  ## the RECORDED value makes the file reproducible; the in-memory value used for
+  ## the positive-definiteness test is untouched, so nothing is weakened. The
+  ## canonical analysis table never contained this column, so no hash changes.
+  effects$min_eigen <- round(effects$min_eigen, 10)
 
   ## ---- gate: one triplet per sample per pathway ---------------------------
   prim <- ALL[ALL$analysis_role == "primary", ]

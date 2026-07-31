@@ -126,3 +126,28 @@ test_that("rcalc and asyCov differ only in the characterised ways", {
   # an order of magnitude more. It is a sensitivity construction, never primary.
   expect_true(all(v$max_abs_diff_weighted > v$max_abs_diff_individual))
 })
+
+test_that("the provenance registries are byte-reproducible across platforms", {
+  # A cross-platform finding, not a hypothetical. min_eigen is computed by
+  # LAPACK and its final digits differ between macOS and Linux: Simpson 2020
+  # is 0.519788893624411 on one and ...412 on the other. Written at full
+  # precision that made effects.csv differ from a rebuild on another machine,
+  # which is exactly what the release gate "the build left no tracked file
+  # modified" exists to catch, and it caught it.
+  #
+  # min_eigen is a diagnostic used only for a > 0 test, so recording it at ten
+  # decimal places loses nothing and makes the file reproducible.
+  e <- LOCK$effects
+  expect_true("min_eigen" %in% names(e))
+  expect_equal(e$min_eigen, round(e$min_eigen, 10))
+
+  # It must still do its job: every retained matrix is positive definite.
+  expect_true(all(e$min_eigen[!e$excluded] > 0))
+
+  # And the canonical analysis table, whose hash pins the whole run, never
+  # carried this column, so no platform-dependent value can reach the
+  # analysis_id. Read from the written file, not from a column list this test
+  # would otherwise be asserting against itself.
+  tab <- read.csv("../../../data/inputs/analysis_table.csv", stringsAsFactors = FALSE)
+  expect_false("min_eigen" %in% names(tab))
+})
