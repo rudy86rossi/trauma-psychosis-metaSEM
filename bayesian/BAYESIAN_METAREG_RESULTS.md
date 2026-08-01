@@ -3,10 +3,12 @@
 Prepared by ricardotwumasi. British English throughout. Methods are in
 `BAYESIAN_METAREG_METHODS.md`.
 
-Every number below is generated from the tables in `results/run_aed067c558c9/`.
+Every number below is generated from the tables in `results/run_c9cb1a366dfb/`.
 None is transcribed by hand.
 
 ## 1. What the analysis found
+
+Sample identity is curated in `data/provenance/sample_map.csv`. 9 of 41 report-to-cohort assertions have been evidenced against a named source and 1 is disputed; the remaining 31 rest on the author and year printed in the extraction workbook and have not been checked against the papers. The analytical unit is therefore derived and has not been externally verified.
 
 The matched frequentist meta-regressions produced 16 of 72 moderator slopes at p < 0.05, across 12 of 24 pathway-by-moderator models. These are retained as internal validation targets only. They are not co-primary, and their p values are not used to arbitrate a disagreement with the posterior.
 
@@ -25,7 +27,7 @@ A finding that appears in only one layer is labelled as belonging to that layer.
 
 These intervals describe the range of LATENT TRUE effects expected across new studies drawn from the estimated population. They do not add the sampling error a future observed estimate would also carry, so a realised estimate would scatter more widely still. Their width is driven entirely by the between-study heterogeneity tau, which is weakly identified at this number of studies and therefore substantially prior-informed; the tau posteriors are reported in `tables/heterogeneity.csv` so that claim can be checked rather than taken on trust.
 
-**Proportion mediated.** Finite central 95 per cent credible intervals were obtained in 6 of 6 pathways. The ratio ab / total remains mathematically unbounded and can be heavy-tailed when the total effect approaches zero, so a finite central interval is not evidence that the quantity is well behaved. It is reported only where the total effect is separated from zero, and is descriptive rather than an estimand of interest in its own right.
+**Proportion mediated is not reported.** The ratio ab / total is mathematically unbounded and heavy-tailed as the total effect approaches zero, so a finite central interval is not evidence that the quantity is well behaved and a diagnostic exemption would not make it one. It is not computed, tabulated or interpreted anywhere in this release. Percentages mediated reported in the descriptive systematic review are a separate summary of the individual published analyses and are not estimates from these models. See `docs/proportion_mediated_removed.md`.
 
 ## 3. Pooled mediation quantities
 
@@ -124,7 +126,7 @@ These checks detected **no gross conflict between the model and the data**. That
 **Prior predictive check.** 66 prespecified plausibility criteria across 6 pathways, all of which were met. The thresholds are recorded in `config/analysis.yml` and were committed before the run that tested them; the configuration hash forms part of the analysis identifier, so that ordering is verifiable rather than asserted. The criteria require the priors to COVER the published correlations tabulated in `bayesian/docs/prior_scope.md`, not to encode them: the priors remain weakly informative and are not literature-derived.
 
 
-**Prior and likelihood power scaling.** Sensitivity was computed for 342 parameters across the primary fits. 164 were flagged, of which 87 were heterogeneity parameters. This asks a different question from the prior grid: the grid refits at other prior widths and asks whether the conclusion moves, whereas power scaling asks which of the prior and the likelihood is driving each posterior.
+**Prior and likelihood power scaling.** Sensitivity was archived for 342 quantities across the primary fits, of which 324 were evaluable; 18 rows were structurally inapplicable, being the moderator contrast in an intercept-only model, which has no contrast to span. Of the evaluable quantities 146 were flagged and 178 were not, and 87 of the flagged were heterogeneity parameters. This asks a different question from the prior grid: the grid refits at other prior widths and asks whether the conclusion moves, whereas power scaling asks which of the prior and the likelihood is driving each posterior.
 
 A parameter flagged as prior-dominated is one the data barely inform, so its posterior should not be read as an empirical finding. This is expected for tau at four to ten studies and is the reason the prediction intervals are described as prior-informed. Full results, including any flag on the coordinate carrying a reported decision, are in `diagnostics/power_scaling.csv`.
 
@@ -134,7 +136,7 @@ A parameter flagged as prior-dominated is one the data barely inform, so its pos
 
 Repeating the same tests over **all** ranks, including those from the 7 diagnostically invalid fits, gives 3 p values below 0.05 against 3 in the primary test. The exclusion therefore changes nothing.
 
-This is a **screening-level** calibration check, not high-powered proof of calibration, and it is conditional on the plug-in sampling covariance matrices: it validates the implemented likelihood and sampler given those matrices, not the uncertainty that arises from estimating them from participant-level data. The p values are correlated across parameters and across scenarios, so the binomial figure above is a reference point rather than a formal guarantee. Raw truths, ranks and per-replicate diagnostics are archived in `diagnostics/sbc_ranks_raw.csv`, so every rank can be recomputed without refitting.
+This is a **screening-level** calibration check, not high-powered proof of calibration, and it is conditional on the plug-in sampling covariance matrices: it validates the implemented likelihood and sampler given those matrices, not the uncertainty that arises from estimating them from participant-level data. The p values are correlated across parameters and across scenarios, so the binomial figure above is a reference point rather than a formal guarantee. Raw truths, ranks and per-replicate diagnostics are archived in `diagnostics/sbc_ranks_raw.csv`, so every rank-uniformity analysis above, including the primary and all-ranks comparison, can be recomputed from the released ranks without refitting. The posterior draws each rank was computed from are not retained, so an individual rank cannot be rebuilt from that file.
 
 ## 8. Limitations
 

@@ -3,13 +3,15 @@
 Prepared by ricardotwumasi. British English throughout. Results are in
 `BAYESIAN_METAREG_RESULTS.md`.
 
-Generated from `results/run_aed067c558c9/`. Version numbers and scale constants are read from the run manifest and `config/analysis.yml`.
+Generated from `results/run_c9cb1a366dfb/`. Version numbers and scale constants are read from the run manifest and `config/analysis.yml`.
 
 ## Methods text for the manuscript
 
 We replaced the frequentist two-stage meta-analytic structural equation model with a Bayesian analysis. The corrected frequentist results were retained only as internal validation targets; they are not reported as co-primary findings, and their p values were not used to arbitrate disagreements with the posterior.
 
-The analytical unit was one independent participant sample, not one publication, spreadsheet row or instrument. A sample contributed at most one triplet of correlations to any pathway. Multiple eligible instruments administered to the same participants did not increase the number of studies and were not averaged, because an average describes no defined construct and conceals the dependence induced by shared participants. Where a sample supplied more than one eligible instrument, one was selected by a prespecified hierarchy favouring commensurability with the other included samples, and the alternative was retained as a replacement sensitivity analysis.
+The intended analytical unit was one participant cohort, not one publication, spreadsheet row or instrument, and for most included reports that identity is unevidenced against the source papers. A cohort contributed at most one triplet of correlations to any pathway. Multiple eligible instruments administered to the same participants did not increase the number of studies and were not averaged, because an average describes no defined construct and conceals the dependence induced by shared participants. Where a cohort supplied more than one eligible instrument, one was selected by a prespecified hierarchy favouring commensurability with the other included cohorts, and the alternative was retained as a replacement sensitivity analysis.
+
+Sample identity is curated in `data/provenance/sample_map.csv`. 9 of 41 report-to-cohort assertions have been evidenced against a named source and 1 is disputed; the remaining 31 rest on the author and year printed in the extraction workbook and have not been checked against the papers. The analytical unit is therefore derived and has not been externally verified.
 
 Each included sample contributed three correlations among childhood trauma (X), the proposed mediator (M) and the psychosis outcome (Y), in the fixed order r(X,M), r(X,Y), r(M,Y). Correlations were Fisher-z transformed. Because the three correlations are calculated in the same participants they are not independent, so each study's full 3 by 3 within-study sampling covariance matrix on the z scale was supplied to the model as known, constructed with `metafor::rcalc(rtoz = TRUE)`.
 
@@ -19,7 +21,7 @@ The **primary layer** was a purpose-written Stan model in which the between-stud
 
         r(M,Y) = r(X,M) r(X,Y) + r(M,Y|X) sqrt[(1 - r(X,M)^2)(1 - r(X,Y)^2)]
 
-guarantees that every posterior draw defines a positive-definite correlation matrix, which a hierarchy placed on the three zero-order correlations does not. From each draw the standardised mediation model M = aX + e, Y = c'X + bM + e was recovered exactly, giving a = r(X,M), b = [r(M,Y) - r(X,M) r(X,Y)] / [1 - r(X,M)^2], c' = [r(X,Y) - r(X,M) r(M,Y)] / [1 - r(X,M)^2], the indirect effect ab, the total effect c' + ab = r(X,Y), and the proportion mediated ab / (c' + ab). These were computed for the population-average correlation matrix, for each study, and for a new-study predictive distribution.
+guarantees that every posterior draw defines a positive-definite correlation matrix, which a hierarchy placed on the three zero-order correlations does not. From each draw the standardised mediation model M = aX + e, Y = c'X + bM + e was recovered exactly, giving a = r(X,M), b = [r(M,Y) - r(X,M) r(X,Y)] / [1 - r(X,M)^2], c' = [r(X,Y) - r(X,M) r(M,Y)] / [1 - r(X,M)^2], the indirect effect ab and the total effect c' + ab = r(X,Y). These were computed for the population-average correlation matrix, for each study, and for a new-study predictive distribution. The proportion mediated ab / (c' + ab) was not computed: it is unbounded and heavy-tailed as the total effect approaches zero, so it is not a usable estimand at these study counts.
 
 The **reference layer** was fitted in `brms` and models the three Fisher-z correlations directly, with the known sampling covariance supplied through `fcor()` and the residual standard deviation fixed to 1 by a constant prior, and with diagonal between-study random effects by correlation type. It is the like-for-like comparison with the frequentist zero-order analysis. It was not treated as the arbiter where the two layers disagreed.
 
@@ -122,11 +124,11 @@ This is a screening-level check, not high-powered proof of calibration, and it i
 | --- | --- |
 | R | R version 4.4.2 (2024-10-31) |
 | CmdStan | 2.36.0 |
-| Analysis identifier | aed067c558c9 |
-| Source commit | f64421c4210b |
+| Analysis identifier | c9cb1a366dfb |
+| Source commit | 29f78bb9d8d2 |
 | Locked analysis table | 6aa4705709eb0db8 |
 | Configuration | 443ca6cbd2f7e8cf |
-| Stan source | 4460ab7800024b71 |
+| Stan source | 748a11efafb07854 |
 | renv lockfile | 4e0bec03ba9bef9e |
 
 The analysis identifier is derived deterministically from the frozen source commit, the canonical data hash, the validated configuration hash, the Stan source hash and the `renv.lock` hash, so a run cannot be confused with one produced from different inputs.
