@@ -55,7 +55,9 @@ workbook is committed. See [`bayesian/README.md`](bayesian/README.md).
 - R with packages: `metaSEM`, `OpenMx`, `readxl`, `ggplot2`, `tidyverse`, `semPlot`, `flextable`, `gridExtra`
 - Bayesian reanalysis: `cmdstanr` with CmdStan 2.36.0, `brms`, `targets`, `renv` (see `renv.lock`)
 
-## Ai Statement
+## AI Statement
+
+This project was built with the assistance of Claude Code powered by the models Opus 5 and Fable 5 (Anthropic, San Francisco: CA).
 
 ## Reference
 
