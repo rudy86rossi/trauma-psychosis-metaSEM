@@ -64,7 +64,7 @@ check_documents <- function(paths, R, cfg, tol = 5e-4, lock = NULL) {
   ## rewrite of the prose, so it is enforced here rather than remembered.
   have_lock  <- !is.null(lock) && !is.null(lock$samples) && !is.null(lock$sample_map)
   unverified <- if (have_lock) sum(lock$sample_map$evidence_status != "evidenced") else NA_integer_
-  caveat     <- if (have_lock) identity_caveat(lock$samples, lock$sample_map) else NA_character_
+  caveat     <- if (have_lock) identity_caveat(lock$samples, lock$sample_map, lock$effects) else NA_character_
   verified_claims <- c("verified independent sample", "verified analytical unit",
                        "curated sample registry", "independently verified sample",
                        "confirmed independent", "verified cohort",
@@ -107,9 +107,10 @@ check_documents <- function(paths, R, cfg, tol = 5e-4, lock = NULL) {
         any(grepl(w, txt, ignore.case = TRUE)), logical(1))]
       if (length(claimed))
         problems <- c(problems, sprintf(
-          paste("%s: claims %s while %d of %d curated identities are still",
-                "unevidenced. Sample identity rests on the author and year printed",
-                "in the workbook and has not been externally verified."),
+          paste("%s: claims %s while %d of %d curated identities are not",
+                "evidenced (unevidenced or disputed). Sample identity rests on",
+                "the author and year printed in the workbook for those rows and",
+                "has not been externally verified."),
           nm, paste(sQuote(claimed), collapse = ", "), unverified,
           nrow(lock$sample_map)))
 
@@ -137,7 +138,8 @@ check_documents <- function(paths, R, cfg, tol = 5e-4, lock = NULL) {
                         ignore.case = TRUE)))
           problems <- c(problems, sprintf(
             paste("%s: unqualified assertion about sample independence while %d of",
-                  "%d curated identities are still unevidenced:\n    \"%s\""),
+                  "%d curated identities are not evidenced (unevidenced or",
+                  "disputed):\n    \"%s\""),
             nm, unverified, nrow(lock$sample_map), trimws(sents[i])))
       }
     }

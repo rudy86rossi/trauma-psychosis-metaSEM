@@ -34,8 +34,8 @@ write_methods_doc <- function(R, cfg, lock, path) {
   ## required disclosure elsewhere in the document is not a licence for an
   ## unqualified claim here.
   add(paste("The intended analytical unit was one participant cohort, not one publication,",
-            "spreadsheet row or instrument, and for most included reports that identity is",
-            "unevidenced against the source papers. A cohort contributed at most one triplet of",
+            "spreadsheet row or instrument; identity is curated in",
+            "`data/provenance/sample_map.csv`. A cohort contributed at most one triplet of",
             "correlations to any pathway. Multiple eligible instruments administered to the same",
             "participants did not increase the number of studies and were not averaged, because an",
             "average describes no defined construct and conceals the dependence induced by shared",
@@ -43,7 +43,7 @@ write_methods_doc <- function(R, cfg, lock, path) {
             "selected by a prespecified hierarchy favouring commensurability with the other",
             "included cohorts, and the alternative was retained as a replacement sensitivity",
             "analysis."), "")
-  add(identity_caveat(lock$samples, lock$sample_map), "")
+  add(identity_caveat(lock$samples, lock$sample_map, lock$effects), "")
 
   add(paste("Each included sample contributed three correlations among childhood trauma (X), the",
             "proposed mediator (M) and the psychosis outcome (Y), in the fixed order r(X,M),",

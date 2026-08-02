@@ -8,7 +8,7 @@ None is transcribed by hand.
 
 ## 1. What the analysis found
 
-Sample identity is curated in `data/provenance/sample_map.csv`. 9 of 41 report-to-cohort assertions have been evidenced against a named source and 1 is disputed; the remaining 31 rest on the author and year printed in the extraction workbook and have not been checked against the papers. The analytical unit is therefore derived and has not been externally verified.
+Sample identity is curated in `data/provenance/sample_map.csv`. All 41 report-to-cohort assertions have been checked against named sources: 40 are evidenced and 1 is disputed. The disputed assertion is excluded from the analysed set. Consequently, no assertion remains unevidenced, and all report-to-cohort mappings used in the analysis are evidenced against named sources.
 
 The matched frequentist meta-regressions produced 16 of 72 moderator slopes at p < 0.05, across 12 of 24 pathway-by-moderator models. These are retained as internal validation targets only. They are not co-primary, and their p values are not used to arbitrate a disagreement with the posterior.
 
