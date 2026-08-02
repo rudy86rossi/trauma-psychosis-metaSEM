@@ -1,0 +1,3 @@
+"pathway","studyID","year","status","reason"
+"dissoc_cps","Evans",2015,"excluded_permanent","Table 3 reports unstandardised regression coefficients with a binary clinical-group outcome, not the zero-order correlation triplet the model requires. The estimand is incommensurate; reinstatement needs participant-level data or a complete correlation matrix."
+"dissoc_cps","Uyan,",2022,"pending_source_query","The extracted row holds Figure 2 case-control mediation coefficients with a binary schizophrenia-status outcome across N = 200. The patient-only sample (N = 100) reports r_MY = 0.106 and r_XY = 0.193 in Table 3, but r_XM is not numerically reported. Reinstatable if the CTQ-to-DES correlation is obtained."

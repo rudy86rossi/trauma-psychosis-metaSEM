@@ -1,0 +1,35 @@
+Package: traumapsychosisBayes
+Title: Bayesian Meta-Analytic SEM for Childhood Trauma and Psychosis
+Version: 0.1.0
+Authors@R:
+    person("Ricardo", "Twumasi", role = c("aut", "cre"),
+           email = "40059457+ricardotwumasi@users.noreply.github.com")
+Description: Bayesian reanalysis of the trauma-to-psychosis mediation
+    meta-analyses. Not an installable package; the DESCRIPTION exists so that
+    the analysis dependencies are declared in one machine-readable place and
+    renv can resolve them. CmdStan is NOT an R package and must be installed
+    separately at the pinned version; see bayesian/README.md.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends:
+    R (>= 4.4.0)
+Imports:
+    brms (>= 2.23.0),
+    cmdstanr (>= 0.9.0),
+    digest,
+    ggplot2,
+    ggdist,
+    metafor (>= 4.6.0),
+    metaSEM (>= 1.5.0),
+    posterior (>= 1.6.0),
+    readxl,
+    svglite,
+    tarchetypes,
+    targets,
+    yaml
+Suggests:
+    bayesplot,
+    loo,
+    priorsense,
+    testthat (>= 3.2.0)
+SystemRequirements: CmdStan (2.36.0)

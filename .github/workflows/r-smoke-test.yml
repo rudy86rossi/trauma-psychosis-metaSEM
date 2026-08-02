@@ -1,0 +1,145 @@
+# Fast gates only. The full HMC analysis is never run on a commit: it takes
+# hours and belongs on dedicated compute, followed by a clean-clone reproduction
+# check.
+name: R smoke test
+
+on:
+  push:
+    branches: [main, bayesian-reanalysis]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      RENV_PATHS_ROOT: ~/.cache/R/renv
+      CMDSTAN_VERSION: "2.36.0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.4.2'
+          use-public-rspm: true
+
+      # System libraries the locked packages link against. Without libglpk-dev,
+      # igraph installs and then fails to load with "libglpk.so.40: cannot open
+      # shared object file", which aborts renv::restore() before any test,
+      # compilation or sampling step runs. renv names these itself in its own
+      # failure output; they are reproduced here so the run does not depend on
+      # reading that output.
+      - name: System dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libglpk-dev libfontconfig1-dev libfreetype6-dev libpng-dev \
+            libharfbuzz-dev libfribidi-dev libtiff5-dev libjpeg-dev pandoc
+
+      - uses: r-lib/actions/setup-renv@v2
+
+      - name: Cache CmdStan
+        uses: actions/cache@v4
+        with:
+          path: ~/.cmdstan
+          key: cmdstan-${{ runner.os }}-${{ env.CMDSTAN_VERSION }}
+
+      # cmdstan_version(error_on_NA = FALSE) returns NULL when CmdStan is absent,
+      # and `NULL %in% x` is logical(0), so the previous one-liner failed with
+      # "argument is of length zero" on any runner without a cache hit. It had
+      # never executed, because renv::restore() aborted before reaching it.
+      - name: Install and verify the pinned CmdStan
+        run: |
+          Rscript -e '
+            want <- Sys.getenv("CMDSTAN_VERSION")
+            have <- tryCatch(cmdstanr::cmdstan_version(error_on_NA = FALSE),
+                             error = function(e) NULL)
+            if (!isTRUE(identical(have, want)))
+              cmdstanr::install_cmdstan(version = want, cores = 2, overwrite = TRUE)
+            got <- cmdstanr::cmdstan_version()
+            if (!identical(got, want))
+              stop("CmdStan version is ", got, ", expected ", want)
+            cat("CmdStan", got, "ready\n")'
+
+      # An ASSERTION, not a report. renv::status() returns normally whatever it
+      # finds, so calling it alone turned a broken environment into green text.
+      # Only the library-versus-lockfile relationship is asserted: renv's `used`
+      # column is a static scan of source files and reports Suggests-only
+      # packages as unused, which is not a synchronisation failure.
+      # Asserted directly against the lockfile rather than through
+      # renv::status()$synchronized. The status object's shape varies by renv
+      # version, so a check written against fields that may not exist would pass
+      # vacuously, which is the same failure mode as printing the result and
+      # ignoring it. Only installed-versus-recorded is asserted: renv's `used`
+      # column is a static source scan and reports Suggests-only packages as
+      # unused, which is not a synchronisation failure.
+      - name: Locked environment matches the lockfile
+        run: |
+          Rscript -e '
+            lock <- renv::lockfile_read("renv.lock")$Packages
+            inst <- as.data.frame(installed.packages()[, c("Package", "Version")],
+                                  stringsAsFactors = FALSE)
+            bad <- character(0)
+            for (p in names(lock)) {
+              i <- inst$Version[inst$Package == p]
+              if (!length(i)) bad <- c(bad, paste0(p, " (not installed)"))
+              else if (!identical(i[1], lock[[p]]$Version))
+                bad <- c(bad, sprintf("%s (have %s, lockfile %s)", p, i[1], lock[[p]]$Version))
+            }
+            if (length(bad))
+              stop(length(bad), " package(s) do not match renv.lock: ",
+                   paste(utils::head(bad, 10), collapse = ", "))
+            cat("all", length(lock), "locked packages installed at the recorded version\n")'
+
+      - name: Every R file parses
+        run: Rscript -e 'for (f in list.files("bayesian", "[.]R$", recursive = TRUE, full.names = TRUE)) parse(f)'
+
+      - name: Source hashes and the correction ledger apply cleanly
+        run: |
+          Rscript -e '
+            source("bayesian/R/lib_provenance.R"); source("bayesian/R/lib_config.R")
+            source("bayesian/R/lib_data.R"); source("bayesian/R/01_data_lock.R")
+            cfg <- load_config(); lock <- build_data_lock(cfg)
+            p <- write_data_lock(lock); cat("analysis table:", p, sha256_file(p), "\n")'
+
+      - name: Stan model compiles
+        run: Rscript -e 'cmdstanr::cmdstan_model("bayesian/stan/masem_valid.stan")'
+
+      - name: Unit tests
+        run: Rscript -e 'testthat::test_dir("bayesian/tests/testthat", stop_on_failure = TRUE)'
+
+      # negsch_cps by age, deliberately. It is the ONLY specification with an
+      # incomplete moderator (Dhondt 2022 has no recorded age), so it is the
+      # only one that exercises the masking branch in make_stan_data() and the
+      # fitted-subset handling in extract_stan() and ppc_summaries(). Both broke
+      # during development and neither was caught, because every targeted test
+      # used a complete moderator. The whole extraction route is exercised here,
+      # not just the sampler, since the second defect would have printed k = 7
+      # for a six-study fit while sampling perfectly happily.
+      - name: Short sampling run over the incomplete-moderator branch
+        run: |
+          Rscript -e '
+            for (f in c("lib_provenance","lib_config","lib_data","lib_summaries",
+                        "lib_stan","lib_ppc","01_data_lock"))
+              source(file.path("bayesian/R", paste0(f, ".R")))
+            cfg <- load_config(); lock <- build_data_lock(cfg)
+            key <- "negsch_cps"; mod <- "age"
+            df <- lock$analysis[[key]]; mods <- lock$mods[[key]]
+            keep <- mods[[mod]]$keep
+            stopifnot(sum(keep) < nrow(df))          # the branch must be live
+            sd_ <- make_stan_data(cfg, df, lock$vz_chol[[key]], mod, mods)
+            stopifnot(sd_$K == sum(keep), length(sd_$x) == sd_$K)
+            s <- list(chains = 2, iter_warmup = 200, iter_sampling = 200,
+                      adapt_delta = 0.95, max_treedepth = 10)
+            fit <- fit_masem(cfg, sd_, "ci_smoke", sampling = s)
+            df_fit <- df[keep, , drop = FALSE]
+            ex  <- extract_stan(cfg, fit, key, mod, mods[[mod]]$spec, df_fit, mods, "ok")
+            ppc <- ppc_summaries(cfg, fit, key, mod, df_fit)
+            stopifnot(nrow(fit$summary("alpha")) == 3,
+                      all(ex$slopes$k_samples == sum(keep)),
+                      nrow(ppc$study) == sum(keep),
+                      nrow(ex$heterogeneity) == 3)
+            cat("smoke fit and extraction ok, k =", sum(keep), "of", nrow(df), "\n")'
+
+      - name: The build left no tracked file modified
+        run: git diff --exit-code

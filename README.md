@@ -37,9 +37,23 @@ Each analysis folder contains:
 - `*.R` — analysis script
 - `*.pdf` — results output
 
+## Bayesian reanalysis
+
+A Bayesian replacement for the meta-regressions lives in [`bayesian/`](bayesian/),
+on the `bayesian-reanalysis` branch. It is offered for review alongside the
+frequentist analysis rather than as a replacement for this history.
+
+The primary model is a valid-correlation meta-analytic SEM in Stan, which
+assigns probability only to positive-definite population correlation matrices; a
+`brms` correlation-level model provides a like-for-like reference. The analytical
+unit is one independent participant sample. Inputs are the workbooks already in
+this repository plus a readable correction ledger, so no modified binary
+workbook is committed. See [`bayesian/README.md`](bayesian/README.md).
+
 ## Software
 
 - R with packages: `metaSEM`, `OpenMx`, `readxl`, `ggplot2`, `tidyverse`, `semPlot`, `flextable`, `gridExtra`
+- Bayesian reanalysis: `cmdstanr` with CmdStan 2.36.0, `brms`, `targets`, `renv` (see `renv.lock`)
 
 ## Ai Statement
 
