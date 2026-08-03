@@ -15,6 +15,17 @@ fmt <- function(x, d = 3) formatC(x, format = "f", digits = d)
 pct <- function(x, d = 1) paste0(formatC(100 * x, format = "f", digits = d), " per cent")
 ci  <- function(lo, hi, d = 3) sprintf("[%s, %s]", fmt(lo, d), fmt(hi, d))
 
+#' A posterior probability, never rounded up to certainty.
+#'
+#' fmt(0.99985, 3) prints "1.000", which reads as a probability of one. No
+#' posterior probability computed from 12,000 draws is one, and a reader is
+#' entitled not to be told that it is. The documents already use the ">0.999"
+#' convention in prose; this makes it the generated one too.
+pfmt <- function(x, d = 3) {
+  cap <- 1 - 10^(-d) / 2
+  ifelse(x >= cap, paste0(">", fmt(1 - 10^(-d), d)), fmt(x, d))
+}
+
 #' Read every table from a promoted run.
 read_run <- function(run_dir) {
   rd <- function(sub, name) {
@@ -129,7 +140,7 @@ writeup_proportion_mediated <- function(cfg, R) {
     "not; every pathway is retained in the audit whatever its status."),
     pm$delta_primary, pm$min_p_total_gt_delta, pm$min_p_in_unit_interval,
     pm$delta_primary,
-    paste(setdiff(unlist(pm$delta_grid), pm$delta_primary), collapse = " and "),
+    paste(fmt(setdiff(unlist(pm$delta_grid), pm$delta_primary), 3), collapse = " and "),
     nrow(aud), NROW(rel), NROW(wit)), "")
 
   ## One row per pathway, in the document's fixed pathway order.
@@ -142,8 +153,8 @@ writeup_proportion_mediated <- function(cfg, R) {
       `Percentage [95% CrI]` = if (passed)
         sprintf("%s %s", fmt(a$median[1], 1), ci(a$q_lo[1], a$q_hi[1], 1))
         else "not stably estimable",
-      `P(total > threshold)` = fmt(a$p_total_gt_delta[1], 3),
-      `P(0 < percentage < 100)` = fmt(a$p_in_range[1], 3),
+      `P(total > threshold)` = pfmt(a$p_total_gt_delta[1]),
+      `P(0 < percentage < 100)` = pfmt(a$p_in_range[1]),
       Status = if (passed) "released" else "withheld",
       check.names = FALSE, stringsAsFactors = FALSE)
   }))
