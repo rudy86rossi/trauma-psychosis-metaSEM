@@ -39,6 +39,11 @@ read_run <- function(run_dir) {
     prior_stab  = rd("tables", "prior_grid_stability.csv"),
     decided     = rd("tables", "decisions.csv"),
     vz          = rd("tables", "vz_comparison.csv"),
+    pmed_released  = rd("tables", "proportion_mediated.csv"),
+    pmed_withheld  = rd("tables", "proportion_mediated_withheld.csv"),
+    pmed_audit     = rd("tables", "proportion_mediated_audit.csv"),
+    pmed_stability = rd("tables", "proportion_mediated_stability.csv"),
+    pmed_diagnostics = rd("diagnostics", "proportion_mediated_diagnostics.csv"),
     heterogeneity = rd("tables", "heterogeneity.csv"),
     prior_predictive = rd("tables", "prior_predictive.csv"),
     prior_predictive_verdict = rd("tables", "prior_predictive_verdict.csv"),
@@ -72,6 +77,125 @@ md_table <- function(df, digits = 3) {
   c(paste0("| ", paste(names(df), collapse = " | "), " |"),
     paste0("| ", paste(rep("---", ncol(df)), collapse = " | "), " |"),
     apply(body, 1, function(r) paste0("| ", paste(r, collapse = " | "), " |")))
+}
+
+## ---- the percentage carried by the indirect path ----------------------------
+
+#' The reported paragraph and its six-row table.
+#'
+#' Every pathway keeps its row. A failing pathway prints "not stably estimable"
+#' rather than vanishing, so the withholding is visible and countable in the
+#' table a reader actually looks at, while the released and withheld files keep
+#' the machine-readable split.
+writeup_proportion_mediated <- function(cfg, R) {
+  rel <- R$pmed_released; wit <- R$pmed_withheld; aud <- R$pmed_audit
+  if (is.null(aud) || !nrow(aud))
+    return(paste("**The percentage carried by the indirect path is not reported.** The",
+                 "run produced no summaries for it."))
+
+  pm <- cfg$proportion_mediated
+  out <- character(0)
+  add <- function(...) out <<- c(out, ...)
+
+  add(paste0(
+    "**Percentage of the pooled association represented by the indirect path.** ",
+    "This quantity is a POST HOC analysis amendment, added at the co-authors' request ",
+    "after the previous release and withheld from it. It is not prespecified. Its ",
+    "estimand, reporting rule and diagnostics were fixed before the refit that ",
+    "produced the values below. It is a descriptive companion to the indirect effect ",
+    "ab and does not replace ab as the evidence for mediation."), "")
+
+  add(paste0(
+    "The estimand is ab / total, evaluated draw-wise at the population-average ",
+    "parameter values of the unmoderated model, expressed as a percentage. It is not ",
+    "the average of the study-specific ratios: the transformation is nonlinear, so ",
+    "the two differ. The denominator is the pooled zero-order correlation between ",
+    "adversity and psychosis, which has positive posterior density at zero, so the ",
+    "ratio has no finite mean and no finite standard deviation. It is therefore ",
+    "summarised by its posterior median and equal-tailed 95 per cent credible ",
+    "interval, and no mean or standard deviation of it appears anywhere in this ",
+    "release. Rank-normalised R-hat, effective sample size and Monte Carlo error at ",
+    "each reported quantile are given in `diagnostics/proportion_mediated_diagnostics.csv`; ",
+    "the rank-normalised statistic depends only on the ordering of the draws and is ",
+    "insensitive to whether the estimand has moments (Vehtari et al., 2021)."), "")
+
+  add(sprintf(paste(
+    "A pathway's percentage is released only if its parent fit passed every sampler",
+    "diagnostic, the posterior probability that the total association exceeds %g is at",
+    "least %.2f, and the posterior probability that the percentage lies between 0 and",
+    "100 is at least %.2f. The displacement %g is a post hoc sensitivity threshold, not",
+    "a clinically validated boundary, and %s are carried alongside it in",
+    "`tables/proportion_mediated_audit.csv`. Of %d pathways, %d met the rule and %d did",
+    "not; every pathway is retained in the audit whatever its status."),
+    pm$delta_primary, pm$min_p_total_gt_delta, pm$min_p_in_unit_interval,
+    pm$delta_primary,
+    paste(setdiff(unlist(pm$delta_grid), pm$delta_primary), collapse = " and "),
+    nrow(aud), NROW(rel), NROW(wit)), "")
+
+  ## One row per pathway, in the document's fixed pathway order.
+  tab <- do.call(rbind, lapply(names(PATHWAY_PROSE), function(k) {
+    a <- aud[aud$pathway == k, ]
+    if (!nrow(a)) return(NULL)
+    passed <- isTRUE(a$gate_pass[1])
+    data.frame(
+      Pathway = PATHWAY_PROSE[k], k = a$k_samples[1],
+      `Percentage [95% CrI]` = if (passed)
+        sprintf("%s %s", fmt(a$median[1], 1), ci(a$q_lo[1], a$q_hi[1], 1))
+        else "not stably estimable",
+      `P(total > threshold)` = fmt(a$p_total_gt_delta[1], 3),
+      `P(0 < percentage < 100)` = fmt(a$p_in_range[1], 3),
+      Status = if (passed) "released" else "withheld",
+      check.names = FALSE, stringsAsFactors = FALSE)
+  }))
+  add(md_table(tab), "")
+
+  if (NROW(wit))
+    add(sprintf("Withheld, and why: %s.",
+                paste(sprintf("%s (%s)", PATHWAY_PROSE[wit$pathway],
+                              wit$failed_conditions), collapse = "; ")), "")
+
+  ## Stability across every class the pathway was refitted under. The
+  ## classification matters as much as the value: a percentage that moves two
+  ## points but flips from released to withheld under a deletion is more fragile
+  ## than one that moves eight and stays released, and a fixed movement threshold
+  ## cannot tell the two apart.
+  st <- R$pmed_stability
+  if (!is.null(st) && nrow(st)) {
+    s <- st[st$fit_class != "stan_primary", ]
+    unstable <- s[!s$classification_stable, ]
+    add(sprintf(paste(
+      "Each pathway was refitted under a robust Student-t likelihood, a weighted",
+      "sampling-covariance construction, an alternative instrument where one exists, a",
+      "prior grid on the intercept and heterogeneity scales, and every single-cohort",
+      "deletion: %d refits in total. The largest shift in any pathway's median across",
+      "all of them was %s percentage points. The released-or-withheld classification",
+      "was unchanged in %d of %d pathway-by-class comparisons%s. Per-class detail is in",
+      "`tables/proportion_mediated_stability.csv`."),
+      sum(s$n_refits), fmt(max(s$max_abs_shift_from_primary), 1),
+      sum(s$classification_stable), nrow(s),
+      if (nrow(unstable))
+        sprintf(", the exceptions being %s",
+                paste(sprintf("%s under %s", PATHWAY_PROSE[unstable$pathway],
+                              unstable$fit_class), collapse = ", "))
+      else ""), "")
+  }
+
+  add(paste(
+    "No prediction interval is defined for this percentage. A ratio computed in a new",
+    "study would be especially unstable, because the predictive distribution of the",
+    "denominator is far more diffuse than its posterior. The credible interval above",
+    "belongs to the population-average percentage; the prediction intervals reported",
+    "in this section belong to the latent true indirect effect ab in a new study. They",
+    "are different quantities and are not comparable."), "")
+
+  add(paste(
+    "This is a model-based decomposition of pooled, largely cross-sectional",
+    "associations. It is not an individual-level causal percentage and it is not the",
+    "expected effect of intervening on the mediator. Percentages mediated reported in",
+    "the descriptive systematic review are a separate summary of the individual",
+    "published analyses and are not estimates from these models. See",
+    "`docs/proportion_mediated.md`."), "")
+  out
 }
 
 ## ---- results document -------------------------------------------------------
@@ -168,13 +292,7 @@ write_results_doc <- function(R, cfg, lock, path) {
             "prior-informed; the tau posteriors are reported in `tables/heterogeneity.csv` so that",
             "claim can be checked rather than taken on trust."), "")
 
-  add(paste("**Proportion mediated is not reported.** The ratio ab / total is mathematically",
-            "unbounded and heavy-tailed as the total effect approaches zero, so a finite central",
-            "interval is not evidence that the quantity is well behaved and a diagnostic exemption",
-            "would not make it one. It is not computed, tabulated or interpreted anywhere in this",
-            "release. Percentages mediated reported in the descriptive systematic review are a",
-            "separate summary of the individual published analyses and are not estimates from",
-            "these models. See `docs/proportion_mediated_removed.md`."), "")
+  add(writeup_proportion_mediated(cfg, R))
 
   # --- 3. pooled quantities
   add("## 3. Pooled mediation quantities", "")

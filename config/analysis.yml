@@ -113,6 +113,42 @@ decision:
   # a scientific estimand, so it receives no verdict either.
   rope_on_partial_coordinate: false
 
+# --- percentage carried by the indirect path ----------------------------------
+# POST HOC. This block was added on 3 August 2026, after run_c9cb1a366dfb, at the
+# co-authors' request. It is an analysis amendment, not a prespecification, and
+# nothing here may be described as prespecified. What IS fixed before the refit
+# that tests it is the estimand, the reporting rule and the thresholds below.
+#
+# The estimand is pmed_prop = ab / total, computed draw-wise, at the
+# population-average parameter values. It is NOT the average of the
+# study-specific ratios: the transformation is nonlinear, so the two differ.
+#
+# The ratio has no finite moments, because the denominator is tanh of a
+# coordinate with unbounded support and therefore has positive density at zero.
+# Quantiles need no moments, so the quantity is summarised by its median and
+# equal-tailed interval and never by a mean or a standard deviation.
+#
+# Reportability is judged on the DENOMINATOR's separation from zero and on the
+# ratio's own mass inside the unit interval. A ratio that leaves the unit
+# interval is the inconsistent-mediation or suppression regime, in which the word
+# "percentage" stops conveying what a reader will take from it.
+proportion_mediated:
+  # Separation of the total association from zero. delta is a displacement on the
+  # correlation scale, not a clinically validated boundary, and the grid is a
+  # post hoc sensitivity range rather than a set of competing standards.
+  delta_primary: 0.05
+  delta_grid: [0.025, 0.05, 0.10]
+  min_p_total_gt_delta: 0.95
+  # Posterior mass of the ratio inside (0, 1).
+  min_p_in_unit_interval: 0.95
+  # An additional heuristic, reported and never decisive. A median-to-SD ratio on
+  # the DENOMINATOR is a signal-to-noise summary, not a Fieller-derived rule, and
+  # it is published only so a reader can see how the two views compare.
+  heuristic_median_sd_grid: [3, 4, 5]
+  # Moderator-endpoint ratios are conditional on a moderator value in an analysis
+  # that has concluded it cannot establish moderation. They are not reported.
+  unmoderated_only: true
+
 # --- priors ------------------------------------------------------------------
 # All on the Fisher-z scale. Moderator slopes are specified on the same
 # full-contrast scale as the SESOI, then divided by the nominal span to give the

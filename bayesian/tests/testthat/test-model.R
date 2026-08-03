@@ -128,8 +128,13 @@ test_that("the fit plan is well formed and derives its own size", {
   # plan is not a Cartesian product.
   loso <- plan[plan$fit_class == "sens_loso_stan", ]
   for (i in seq_len(nrow(loso))) {
-    m <- loso$moderator[i]
-    present <- LOCK$analysis[[loso$pathway[i]]]$sample_id[LOCK$mods[[loso$pathway[i]]][[m]]$keep]
+    m  <- loso$moderator[i]
+    df <- LOCK$analysis[[loso$pathway[i]]]
+    ## The unmoderated model is fitted on every cohort in the pathway. A
+    ## moderated one drops the cohorts with no value for that moderator, so
+    ## "present" is a different set there and the mask has to be applied.
+    present <- if (identical(m, "null")) df$sample_id
+               else df$sample_id[LOCK$mods[[loso$pathway[i]]][[m]]$keep]
     expect_true(loso$drop_sample[i] %in% present)
   }
 

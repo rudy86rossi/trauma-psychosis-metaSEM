@@ -28,6 +28,155 @@ estimate_summary <- function(draws, prob = 0.95) {
              stringsAsFactors = FALSE)
 }
 
+## ---- the ratio -------------------------------------------------------------
+
+## Summaries for a quantity with no finite moments.
+##
+## ab / total is a ratio whose denominator is tanh of a coordinate with unbounded
+## support, so the denominator's density at zero is strictly positive and the
+## expectation of the ratio does not exist. Quantiles do not require moments:
+## the median and the equal-tailed percentiles are finite with probability one
+## and converge under the usual ergodic conditions, and the median is invariant
+## under monotone reparameterisation, which the mean is not.
+##
+## The remedy for a quantity with no first moment is to stop reporting its first
+## and second moments, not to stop reporting the quantity. So this function is
+## structurally incapable of returning a mean or a standard deviation, and it
+## must be used INSTEAD of estimate_summary() rather than alongside it.
+##
+## No highest-density interval and no contiguity flag. Both presuppose a
+## unimodal posterior. This one can be bimodal with mass running off in both
+## directions, and an HDI computed on such a sample is an artefact of where the
+## draws happened to fall rather than a summary of the distribution.
+
+RATIO_FORBIDDEN <- c("mean", "sd", "se", "var", "mcse_mean", "mcse_sd")
+
+#' Estimation summary for a ratio. Quantiles and probabilities only.
+#'
+#' @param draws posterior draws of the ratio.
+#' @param chain_id optional chain index per draw. When supplied, the per-chain
+#'   median and interval endpoints are returned as well, so a reader can see
+#'   whether the chains agree about the quantity rather than trusting a single
+#'   pooled number.
+#' @param upper top of the interpretable range ON THE SCALE OF `draws`: 1 for a
+#'   fraction, 100 for a percentage. This is not decoration. The probability of
+#'   lying inside the interpretable range is the quantity the reportability rule
+#'   turns on, and a fraction's rule applied to percentage draws reads P(0 < x <
+#'   1) on a variable whose median is 55, returning almost zero and withholding
+#'   every pathway. There is no safe default that covers both, so the caller
+#'   states the scale and `range_upper` is carried into the output beside the
+#'   probability it defines.
+#' @param prob central interval mass.
+#'
+#' Non-finite draws are COUNTED and then fail. A ratio whose denominator hit
+#' exactly zero in some draw is a fact about the posterior, and dropping such
+#' draws quietly would turn an inestimable quantity into a plausible-looking one.
+ratio_summary <- function(draws, chain_id = NULL, upper = 1, prob = 0.95) {
+  if (!is.numeric(upper) || length(upper) != 1 || !is.finite(upper) || upper <= 0)
+    stop("ratio_summary(): `upper` must be a single positive number giving the ",
+         "top of the interpretable range on the scale of the draws.")
+  draws <- unname(as.numeric(draws))
+  n_nonfinite <- sum(!is.finite(draws))
+  if (n_nonfinite > 0)
+    stop("ratio_summary(): ", n_nonfinite, " of ", length(draws),
+         " draws are not finite. The denominator reached zero to machine ",
+         "precision. These draws are not removed: a quantity that does not ",
+         "exist for some of the posterior must fail here rather than be ",
+         "summarised over the draws where it happens to exist.")
+  if (!length(draws)) stop("ratio_summary(): no draws.")
+
+  a <- (1 - prob) / 2
+  q <- unname(quantile(draws, c(0.01, a, 0.5, 1 - a, 0.99)))
+
+  ## Monte Carlo standard error of each REPORTED quantile. mcse_mean and
+  ## mcse_sd are undefined here and are never computed.
+  mcse_q <- function(p) tryCatch(
+    posterior::mcse_quantile(draws, probs = p)[[1]],
+    error = function(e) NA_real_)
+
+  out <- data.frame(
+    median = q[3], q_lo = q[2], q_hi = q[4], q01 = q[1], q99 = q[5],
+    ## Where the ratio sits relative to the interpretable range. Outside it is
+    ## the inconsistent-mediation or suppression regime, not an error.
+    range_upper = upper,
+    p_in_range = mean(draws > 0 & draws < upper),
+    p_lt0 = mean(draws < 0), p_gt_upper = mean(draws > upper),
+    p_abs_gt_twice_range = mean(abs(draws) > 2 * upper),
+    p_gt0 = mean(draws > 0),
+    mcse_median = mcse_q(0.5), mcse_q_lo = mcse_q(a), mcse_q_hi = mcse_q(1 - a),
+    n_draws = length(draws), n_nonfinite = n_nonfinite,
+    stringsAsFactors = FALSE)
+
+  if (!is.null(chain_id)) {
+    ch <- split(draws, chain_id)
+    med <- vapply(ch, stats::median, numeric(1))
+    lo  <- vapply(ch, function(x) unname(quantile(x, a)), numeric(1))
+    hi  <- vapply(ch, function(x) unname(quantile(x, 1 - a)), numeric(1))
+    out$n_chains <- length(ch)
+    out$chain_median_min <- min(med); out$chain_median_max <- max(med)
+    out$chain_q_lo_min   <- min(lo);  out$chain_q_lo_max   <- max(lo)
+    out$chain_q_hi_min   <- min(hi);  out$chain_q_hi_max   <- max(hi)
+    out$chain_medians <- paste(signif(med, 6), collapse = " ")
+  }
+
+  bad <- intersect(names(out), RATIO_FORBIDDEN)
+  if (length(bad))
+    stop("ratio_summary() produced a moment-based column: ",
+         paste(bad, collapse = ", "), ". This quantity has no moments.")
+  out
+}
+
+#' Convergence diagnostics for a ratio, kept apart from fit_diagnostics().
+#'
+#' Two reasons it is separate rather than an extra entry in GATED_PARS.
+#'
+#' First, fit_diagnostics() requests mcse_mean and mcse_sd for every variable it
+#' audits, and both are undefined for this quantity; feeding it a ratio would
+#' publish two meaningless numbers next to three meaningful ones.
+#'
+#' Second, that function reduces its variables to a single maximum R-hat which
+#' the release gate then judges. A pathway whose percentage is deliberately
+#' withheld would therefore be able to fail the entire release on a quantity
+#' nobody reads. The percentage's own reportability rule is the right place for
+#' that judgement, and it is applied per pathway.
+#'
+#' Rank-normalised R-hat is what makes any of this legitimate. The classical
+#' statistic is dominated by tail behaviour for a heavy-tailed estimand, which
+#' was a sound objection to the earlier release. Vehtari et al. (2021) replace
+#' each draw by its normal score across chains before computing the statistic,
+#' so the diagnostic depends only on the ORDERING of the draws and is insensitive
+#' to whether the estimand has moments. CmdStanR returns the rank-normalised form
+#' by default.
+ratio_diagnostics <- function(fit, variables, prob = 0.95) {
+  vars <- intersect(variables, fit$metadata()$stan_variables)
+  if (!length(vars)) return(NULL)
+  a <- (1 - prob) / 2
+  sm <- fit$summary(variables = vars, "rhat", "ess_bulk", "ess_tail")
+  dr <- fit$draws(variables = vars, format = "draws_df")
+
+  ## Effective sample size AT the reported quantiles. Bulk ESS describes the
+  ## centre of the distribution and says nothing about how well an interval
+  ## endpoint is resolved.
+  qess <- function(v, p) tryCatch(
+    posterior::ess_quantile(dr[[v]], probs = p)[[1]],
+    error = function(e) NA_real_)
+  mq <- function(v, p) tryCatch(
+    posterior::mcse_quantile(dr[[v]], probs = p)[[1]],
+    error = function(e) NA_real_)
+
+  data.frame(
+    variable = sm$variable,
+    rhat_rank_normalised = sm$rhat,
+    ess_bulk = sm$ess_bulk, ess_tail = sm$ess_tail,
+    ess_median = vapply(sm$variable, qess, numeric(1), p = 0.5),
+    ess_q_lo   = vapply(sm$variable, qess, numeric(1), p = a),
+    ess_q_hi   = vapply(sm$variable, qess, numeric(1), p = 1 - a),
+    mcse_median = vapply(sm$variable, mq, numeric(1), p = 0.5),
+    mcse_q_lo   = vapply(sm$variable, mq, numeric(1), p = a),
+    mcse_q_hi   = vapply(sm$variable, mq, numeric(1), p = 1 - a),
+    stringsAsFactors = FALSE, row.names = NULL)
+}
+
 #' Dienes (2020) summary with the Kruschke (2018) interval rules.
 #'
 #' @param draws posterior draws of the quantity the SESOI is defined on. For a
@@ -145,12 +294,13 @@ STOCHASTIC_PARS <- c("a_new", "b_new", "cprime_new", "ind_new", "total_new")
 
 #' Convergence and sampler diagnostics for one Stan fit.
 #'
-#' No reported quantity now sits outside the gate. `pmed_pop` was the one
-#' exemption, on the sound argument that a ratio whose denominator can approach
-#' zero has an R-hat dominated by the estimand's tail rather than by sampler
-#' performance. The conclusion that follows from that argument is removal of the
-#' quantity, not exemption of it, so it was removed. See
-#' bayesian/docs/proportion_mediated_removed.md.
+#' `pmed_prop` and `pmed_pct` are audited by ratio_diagnostics() above, not here.
+#' That is not an exemption from scrutiny: they receive a stricter diagnostic
+#' regime than anything in this table, including effective sample size and Monte
+#' Carlo error at each reported quantile rather than only in the bulk. What they
+#' are exempt from is the moment-based columns below, which are undefined for
+#' them, and from a global maximum that would let a withheld pathway fail the
+#' whole release. See bayesian/docs/proportion_mediated.md.
 fit_diagnostics <- function(fit, fit_id, cfg, pars = NULL) {
   ds <- fit$diagnostic_summary(quiet = TRUE)
 

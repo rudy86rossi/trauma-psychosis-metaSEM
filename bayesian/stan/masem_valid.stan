@@ -116,6 +116,20 @@ generated quantities {
   vector[NC] a_pop;    vector[NC] b_pop;    vector[NC] cprime_pop;
   vector[NC] ind_pop;  vector[NC] total_pop;
 
+  // Share of the pooled zero-order association carried by the indirect path,
+  // computed draw-wise so numerator and denominator come from the same draw.
+  //
+  // The division is deliberately unguarded. total_pop is tanh of a coordinate
+  // with unbounded support, so its density at zero is positive and the ratio has
+  // no moments; that is the fact the reportability rule in config/analysis.yml
+  // consumes, and clamping the denominator would hide it. Nothing downstream may
+  // take a mean or a standard deviation of either variable.
+  //
+  // Two names because the reported scale is a percentage and the natural scale
+  // is a fraction. Carrying only one invites a hundredfold error at the point of
+  // transcription, so both are emitted and both are tested.
+  vector[NC] pmed_prop;  vector[NC] pmed_pct;
+
   // ZERO-ORDER coordinates on the Fisher-z scale at each contrast value, and
   // their change across the reported contrast.
   //
@@ -185,6 +199,8 @@ generated quantities {
       vector[5] pth = rho_to_path(rho_pop[c]);
       a_pop[c] = pth[1];  b_pop[c] = pth[2];  cprime_pop[c] = pth[3];
       ind_pop[c] = pth[4];  total_pop[c] = pth[5];
+      pmed_prop[c] = ind_pop[c] / total_pop[c];
+      pmed_pct[c]  = 100 * pmed_prop[c];
 
       vector[3] eta_new;
       for (j in 1 : 3) {

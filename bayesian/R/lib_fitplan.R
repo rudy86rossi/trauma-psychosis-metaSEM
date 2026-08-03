@@ -60,6 +60,38 @@ build_fit_plan <- function(cfg, lock) {
             pathway = key, moderator = mname, reportable = status,
             variant = "alternative_instrument", drop_sample = NA_character_)
 
+      ## --- unmoderated prior grid and cohort deletion.
+      ##
+      ## These existed only inside the moderator branch below, because until now
+      ## every quantity carrying a categorical verdict was a moderator contrast.
+      ## The percentage carried by the indirect path is read off the unmoderated
+      ## models, so without these it would be the one prominent quantity in the
+      ## release with no prior sensitivity and no deletion sensitivity at all.
+      if (is.null(m)) {
+        ## beta_full_sd is deliberately excluded. With P = 0 the coefficient
+        ## prior enters neither the model block nor lprior, so varying it would
+        ## refit an identical model and publish the agreement as evidence.
+        if (isTRUE(cfg$sensitivity$prior_grid)) {
+          for (comp in c("alpha_sd", "tau_sd")) {
+            for (v in setdiff(unlist(cfg$priors$grid[[comp]]), cfg$priors$primary[[comp]]))
+              add(fit_class = "sens_prior_grid",
+                  fit_id = sprintf("prior_grid|%s|%s|%s=%g", key, mname, comp, v),
+                  pathway = key, moderator = mname, reportable = status,
+                  variant = sprintf("%s=%g", comp, v), drop_sample = NA_character_)
+          }
+        }
+        ## Stan layer only. The brms reference model fits the three zero-order
+        ## correlations and produces no path decomposition, so it has no ratio
+        ## to be sensitive about.
+        if (isTRUE(cfg$sensitivity$leave_one_study_out)) {
+          for (s in unique(df$sample_id))
+            add(fit_class = "sens_loso_stan",
+                fit_id = sprintf("loso_stan|%s|%s|%s", key, mname, s),
+                pathway = key, moderator = mname, reportable = status,
+                variant = "leave_one_out", drop_sample = s)
+        }
+      }
+
       ## --- moderator-only classes
       if (!is.null(m)) {
         ## Prior grid: vary ONE component at a time about the primary, on the
@@ -182,6 +214,7 @@ safe_run_fit <- function(cfg, lock, row) {
     list(fit_id = row$fit_id, fit_class = row$fit_class, status = "error",
          error = msg, diagnostics = NULL, slopes = NULL, pooled = NULL,
          predict = NULL, contrasts = NULL, heterogeneity = NULL, ppc = NULL,
+         pmed = NULL, pmed_diag = NULL, pmed_draws = NULL,
          draws_d_z = NULL, power_scaling = NULL, prior_predictive = NULL, seconds = NA_real_)
   })
 }
@@ -274,7 +307,16 @@ run_fit <- function(cfg, lock, row) {
   ex <- extract_stan(cfg, fit, key, mod,
                      spec %||% scale_spec(cfg, MOD_NAMES(cfg)[1]),
                      df_fit, mods, reportable)
-  for (nm in c("slopes", "pooled", "predict", "contrasts", "heterogeneity")) {
+  ## The ratio's raw draws are archived for the PRIMARY unmoderated fits only.
+  ## Every unmoderated sensitivity refit also produces them, and carrying all of
+  ## those through the pipeline would add millions of rows to answer a question
+  ## the summaries already answer. Lifted out before the cbind below, which
+  ## drops attributes.
+  pmed_draws <- if (identical(row$fit_class, "stan_primary"))
+    attr(ex$pmed, "draws") else NULL
+
+  for (nm in c("slopes", "pooled", "predict", "contrasts", "heterogeneity",
+               "pmed", "pmed_diag")) {
     if (!is.null(ex[[nm]]))
       ex[[nm]] <- cbind(data.frame(fit_id = row$fit_id, fit_class = row$fit_class,
                                    variant = row$variant, drop_sample = row$drop_sample,
@@ -295,7 +337,9 @@ run_fit <- function(cfg, lock, row) {
     ## log_lik and lprior for this; until now both were discarded while the
     ## configuration advertised the analysis.
     if (isTRUE(cfg$sensitivity$priorsense))
-      psens <- power_scaling(cfg, fit, row$fit_id)
+      psens <- power_scaling(cfg, fit, row$fit_id,
+                             variables = c("alpha", "tau", "beta", "d_z",
+                                           if (is.null(mod)) "pmed_prop"))
   }
 
   ## The prior predictive fits exist to be looked at. Previously they were run,
@@ -306,6 +350,7 @@ run_fit <- function(cfg, lock, row) {
   list(fit_id = row$fit_id, fit_class = row$fit_class, status = "ok",
        diagnostics = ex$diagnostics, slopes = ex$slopes, pooled = ex$pooled,
        predict = ex$predict, contrasts = ex$contrasts, heterogeneity = ex$heterogeneity,
+       pmed = ex$pmed, pmed_diag = ex$pmed_diag, pmed_draws = pmed_draws,
        ppc = ppc, draws_d_z = draws, power_scaling = psens, prior_predictive = prior_pc,
        seconds = as.numeric(difftime(Sys.time(), t0, units = "secs")))
 }

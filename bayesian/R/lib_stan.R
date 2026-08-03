@@ -237,6 +237,87 @@ extract_stan <- function(cfg, fit, key, mod, spec, df, mods, reportable) {
     }))
   }))
 
+  ## --- percentage of the pooled association carried by the indirect path.
+  ##
+  ## Emitted into its OWN frame. A ratio and a path coefficient never share a
+  ## table, because the column sets differ by construction: this one carries no
+  ## mean and no standard deviation, and a shared table would have to invent one
+  ## or leave a suspicious gap.
+  ##
+  ## Unmoderated fits only. A percentage evaluated at, say, 60 per cent female is
+  ## conditional on a moderator value in an analysis that has concluded it cannot
+  ## establish moderation. See config/analysis.yml.
+  pmed <- NULL
+  if (!is_mod && isTRUE(cfg$proportion_mediated$unmoderated_only)) {
+    prop  <- dr[["pmed_prop[1]"]]
+    pct   <- dr[["pmed_pct[1]"]]
+    ind   <- dr[["ind_pop[1]"]]
+    cpr   <- dr[["cprime_pop[1]"]]
+    total <- dr[["total_pop[1]"]]
+
+    ## The transformation is recomputed here from the numerator and denominator
+    ## draws, by code that shares no line with the Stan programme. This is what
+    ## makes the ratio draw-wise rather than a claim that it is: if the
+    ## extraction ever paired mismatched draws, or the generated quantity were
+    ## reordered, the two would diverge immediately.
+    ##
+    ## The comparison is RELATIVE and tolerant, which needs justifying because
+    ## exactness is the obvious expectation. cmdstan writes its draws to CSV at
+    ## six significant figures, so the numerator, the denominator and the ratio
+    ## are each rounded independently before R ever sees them, and a quotient
+    ## reconstructed from two rounded operands cannot equal the rounded quotient.
+    ## The observed disagreement is around 1e-5 relative, sitting on the draws
+    ## where the ratio is largest, exactly as that rounding predicts. Shuffling
+    ## the denominator draws moves it to order 10. The threshold below is two
+    ## orders of magnitude above the storage precision and six below a
+    ## mispairing, so it separates the two without ambiguity. The sharp version
+    ## of this check, on unrounded doubles, is in the test suite.
+    RATIO_PAIRING_TOL <- 1e-3
+    rel <- function(x, y) max(abs(x - y) / pmax(abs(x), 1e-12))
+    d_recompute <- rel(prop, ind / total)
+    if (d_recompute > RATIO_PAIRING_TOL)
+      stop("pmed_prop from Stan disagrees with the independent R recomputation ",
+           "for ", key, ". Maximum relative difference ", format(d_recompute),
+           ", against a tolerance of ", RATIO_PAIRING_TOL, " chosen to admit ",
+           "six-significant-figure storage and nothing else. The numerator and ",
+           "denominator draws are not paired.")
+    d_units <- rel(pct, 100 * prop)
+    if (d_units > RATIO_PAIRING_TOL)
+      stop("pmed_pct is not 100 times pmed_prop for ", key,
+           ". Maximum relative difference ", format(d_units), ".")
+
+    ## Gate inputs, from the JOINT draws. Computing these from marginals would
+    ## discard the dependence between numerator and denominator, which is
+    ## precisely what makes the ratio behave.
+    dg <- unlist(cfg$proportion_mediated$delta_grid)
+    gate <- as.data.frame(setNames(
+      lapply(dg, function(d) mean(total > d)),
+      sprintf("p_total_gt_%g", dg)))
+    gate$p_abs_total_lt_delta <- mean(abs(total) < cfg$proportion_mediated$delta_primary)
+    gate$p_sign_consistent    <- mean(ind > 0 & cpr > 0)
+    ## The denominator's own signal-to-noise, reported as a heuristic only. The
+    ## standard deviation here is the DENOMINATOR's, which is well behaved; the
+    ## ratio's own standard deviation does not exist and is never computed.
+    gate$total_median   <- median(total)
+    gate$total_sd       <- sd(total)
+    gate$total_median_sd_ratio <- median(total) / sd(total)
+
+    ## Summarised on the PERCENTAGE scale, which is the scale reported, so the
+    ## interpretable range runs to 100 rather than to 1.
+    pmed <- cbind(base,
+                  data.frame(contrast_index = 1L, quantity = "pmed_pct",
+                             scale = "per cent", stringsAsFactors = FALSE),
+                  ratio_summary(pct, chain_id = dr$.chain, upper = 100), gate)
+
+    ## The draws themselves, so the ratio can be recomputed, replotted or
+    ## re-summarised by a reader without refitting. Chain and draw identifiers
+    ## are kept: a pooled column cannot be checked for between-chain agreement.
+    attr(pmed, "draws") <- data.frame(
+      pathway = key, .chain = dr$.chain, .draw = dr$.draw,
+      ind_pop = ind, cprime_pop = cpr, total_pop = total, pmed_prop = prop,
+      stringsAsFactors = FALSE)
+  }
+
   ## --- mediation contrasts. Estimation only: no defensible SESOI exists for a
   ## change in ab, and inventing one to obtain a verdict is not justified.
   contrasts <- NULL
@@ -253,7 +334,14 @@ extract_stan <- function(cfg, fit, key, mod, spec, df, mods, reportable) {
       }))
   }
 
+  ## Ratio diagnostics only where a ratio was extracted, and in their own table.
+  pmed_diag <- NULL
+  if (!is.null(pmed)) {
+    pmed_diag <- ratio_diagnostics(fit, c("pmed_prop", "pmed_pct"))
+    if (!is.null(pmed_diag)) pmed_diag <- cbind(base, pmed_diag)
+  }
+
   list(slopes = slopes, pooled = pooled, predict = predict, contrasts = contrasts,
-       heterogeneity = heterogeneity,
+       heterogeneity = heterogeneity, pmed = pmed, pmed_diag = pmed_diag,
        diagnostics = cbind(base, fit_diagnostics(fit, attr(fit, "fit_id"), cfg)))
 }

@@ -25,7 +25,7 @@ load_config <- function(path = "config/analysis.yml") {
 validate_config <- function(cfg) {
   need <- c("seed", "inputs", "pairs", "pathways", "moderators", "decision",
             "priors", "reportability", "instrument_priority", "sampling",
-            "diagnostics", "sbc", "sensitivity")
+            "diagnostics", "sbc", "sensitivity", "proportion_mediated")
   miss <- setdiff(need, names(cfg))
   if (length(miss)) stop("analysis.yml is missing: ", paste(miss, collapse = ", "))
 
@@ -42,6 +42,24 @@ validate_config <- function(cfg) {
       stop("Moderator ", m, " nominal_contrast must be increasing.")
   }
   if (cfg$decision$sesoi_full <= 0) stop("sesoi_full must be positive.")
+
+  ## The percentage's reportability rule. Validated here so that a threshold
+  ## typed as a percentage rather than a probability, which would pass every one
+  ## of these tests silently at report time, fails at load.
+  pm <- cfg$proportion_mediated
+  if (pm$delta_primary <= 0) stop("proportion_mediated$delta_primary must be positive.")
+  if (!any(abs(unlist(pm$delta_grid) - pm$delta_primary) < 1e-12))
+    stop("proportion_mediated$delta_primary must appear in delta_grid, so the ",
+         "reported rule is one point of the sensitivity range rather than a ",
+         "separate choice.")
+  for (p in c("min_p_total_gt_delta", "min_p_in_unit_interval"))
+    if (pm[[p]] <= 0 || pm[[p]] >= 1)
+      stop("proportion_mediated$", p, " is a probability and must lie in (0, 1); got ", pm[[p]])
+  if (!isTRUE(pm$unmoderated_only))
+    stop("proportion_mediated$unmoderated_only is FALSE. A ratio evaluated at a ",
+         "moderator endpoint is conditional on a moderator value in an analysis ",
+         "that cannot establish moderation; reporting it is not supported.")
+
   if (isTRUE(cfg$bayes_factors))
     stop("Bayes factors are removed from this release; see bayesian/docs/bayes_factors_removed.md.")
   invisible(TRUE)

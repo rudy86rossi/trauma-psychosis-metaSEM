@@ -124,6 +124,13 @@ prior_predictive_check <- function(cfg, fit, key) {
 #'
 #' Returns NULL with a warning rather than raising: this is reported evidence,
 #' not a release gate, and priorsense is not guaranteed to support every fit.
+#' The caller adds `pmed_prop` for the unmoderated fits, whose percentage is
+#' reported, so a reader can see whether it is prior-driven. Note what that does
+#' NOT establish. Power scaling measures how a posterior moves when the prior and
+#' the likelihood are tempered. It is not a check that a derived ratio is a stable
+#' or interpretable estimand, and neither is simulation-based calibration, which
+#' tests the sampler's recovery of the model's own parameters. Neither claim is
+#' made anywhere in this release.
 power_scaling <- function(cfg, fit, fit_id, variables = c("alpha", "tau", "beta", "d_z")) {
   if (!requireNamespace("priorsense", quietly = TRUE)) {
     warning("priorsense is not installed; power scaling skipped for ", fit_id)

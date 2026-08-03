@@ -167,7 +167,14 @@ test_that("cohort verification is derived from the mapping rows, never asserted"
 
   smap <- LOCK$sample_map
   s <- smap$sample_id[1]
-  expect_equal(derive_cohort_status(s, smap), "derived_unverified")
+
+  ## Each state is constructed here rather than read off whichever cohort
+  ## happens to be first in the live registry. Completing the identity
+  ## verification evidenced every mapping, so an unevidenced example no longer
+  ## exists in the data, and this line was asserting a fact about the curation
+  ## rather than about the function it names.
+  un <- smap; un$evidence_status[un$sample_id == s] <- "unevidenced"
+  expect_equal(derive_cohort_status(s, un), "derived_unverified")
 
   ev <- smap; ev$evidence_status[ev$sample_id == s] <- "evidenced"
   expect_equal(derive_cohort_status(s, ev), "verified")
