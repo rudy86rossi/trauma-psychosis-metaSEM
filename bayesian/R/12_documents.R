@@ -83,6 +83,12 @@ check_documents <- function(paths, R, cfg, tol = 5e-4, lock = NULL) {
   pool <- pool[is.finite(pool)]
   ## Values are printed in several derived forms; admit each.
   pool <- unique(c(pool, 100 * pool, pool * 2, round(pool)))
+  ## The capping constants of the probability convention. pfmt() prints ">0.999"
+  ## rather than rounding a posterior probability up to 1.000, so the 0.999 in
+  ## that string is a property of the formatting rule and not a figure read off
+  ## a table. Admitting the constants keeps the check meaningful: an invented
+  ## probability still has to match something, and only the exact cap is exempt.
+  pool <- unique(c(pool, 1 - 10^-(1:4)))
 
   for (p in paths) {
     txt <- readLines(p, warn = FALSE)

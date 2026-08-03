@@ -322,3 +322,31 @@ test_that("the ratio is kept out of the moment-based diagnostic gate", {
   expect_false(any(grepl("pmed", GATED_PARS)))
   expect_false(any(grepl("pmed", STOCHASTIC_PARS)))
 })
+
+## ---- formatting -------------------------------------------------------------
+
+test_that("a posterior probability is never printed as certainty", {
+  # formatC(0.99985, digits = 3) gives "1.000", which reads as a probability of
+  # one. Nothing computed from 12,000 draws is one, and the percentage table is
+  # full of probabilities close to it.
+  expect_equal(pfmt(0.99985), ">0.999")
+  expect_equal(pfmt(0.9998), ">0.999")
+  expect_equal(pfmt(0.99949), "0.999")
+  expect_equal(pfmt(0.9412), "0.941")
+  expect_false(any(grepl("^1\\.000$", pfmt(c(0.9999, 1, 0.99951)))))
+})
+
+test_that("the document checker admits the capping constant but not a nearby invention", {
+  # The 0.999 inside ">0.999" is a property of the formatting rule, not a figure
+  # read off a table, so it is admitted. A probability that merely looks similar
+  # still has to match a source, or the exemption would be a hole.
+  tb <- list(x = data.frame(p = c(0.9412, 0.9998), stringsAsFactors = FALSE))
+  ok <- tempfile(fileext = ".md")
+  writeLines(c("The caveat sentence.", "A probability of >0.999 was observed.",
+               "Another was 0.941."), ok)
+  expect_silent(check_documents(ok, tb, CFG, lock = NULL))
+
+  bad <- tempfile(fileext = ".md")
+  writeLines(c("The caveat sentence.", "A probability of 0.987 was observed."), bad)
+  expect_error(check_documents(bad, tb, CFG, lock = NULL), "not found in any table")
+})
