@@ -215,3 +215,44 @@ test_that("a cross-workbook cohort is queried until it is evidenced, then not", 
   open_map$evidence_status[open_map$sample_id == "S013"] <- "unevidenced"
   expect_true("Gibson 2019" %in% spans(sample_review_queue(LOCK$samples, ALL, open_map)))
 })
+
+test_that("promotion is refused from a worktree that does not match HEAD", {
+  # The manifest names a commit as the source of the numbers. That is a claim
+  # about a tree, and it is false the moment an uncommitted edit is present:
+  # the recorded commit then describes source that produced nothing. The
+  # preceding release, run_c9cb1a366dfb, carries the related defect in its
+  # manifest, which is what this exists to stop recurring.
+  #
+  # Exercised on a throwaway repository rather than on this one, because the
+  # project worktree is legitimately dirty while anyone is working in it, and a
+  # test that asserted otherwise would fail for the wrong reason.
+  skip_if(Sys.which("git") == "", "git is not available")
+  d <- file.path(tempfile("cleanrepo"))
+  dir.create(d)
+  on.exit(unlink(d, recursive = TRUE), add = TRUE)
+  git <- function(...) system2("git", c("-C", d, ...), stdout = FALSE, stderr = FALSE)
+  git("init", "-q")
+  git("config", "user.email", "t@example.com")
+  git("config", "user.name", "t")
+  writeLines("a", file.path(d, "f.txt"))
+  git("add", "f.txt")
+  git("commit", "-qm", "first")
+
+  expect_true(assert_clean_worktree(d))
+
+  writeLines("b", file.path(d, "f.txt"))
+  expect_error(assert_clean_worktree(d), "dirty worktree")
+
+  # An untracked file is a dirty worktree too: it is exactly how an input that
+  # was never committed reaches a released bundle.
+  git("checkout", "--", "f.txt")
+  writeLines("x", file.path(d, "untracked.txt"))
+  expect_error(assert_clean_worktree(d), "dirty worktree")
+
+  # Not a git repository at all: refused rather than silently treated as clean,
+  # because system2 returns character(0) for both.
+  nd <- tempfile("notarepo")
+  dir.create(nd)
+  on.exit(unlink(nd, recursive = TRUE), add = TRUE)
+  expect_error(assert_clean_worktree(nd), "must be identified by a commit")
+})

@@ -586,6 +586,9 @@ gate_expected_reportable <- function(cfg, lock, tables) {
 
 promote_run <- function(cfg, analysis_id, data_sha, lock, results, tables,
                         cross_layer, ledger, sbc, freq, gate_diag = NULL, root = ".") {
+  ## Before anything is staged: the manifest is about to name a commit as the
+  ## source of these numbers, and that claim has to be true when it is written.
+  assert_clean_worktree(root)
   staging <- file.path(root, "bayesian", "results", "_staging")
   final   <- file.path(root, "bayesian", "results", paste0("run_", analysis_id))
   unlink(staging, recursive = TRUE)

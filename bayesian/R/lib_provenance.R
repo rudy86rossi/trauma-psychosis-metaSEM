@@ -737,6 +737,38 @@ identity_caveat <- function(samples, smap, effects = NULL) {
           nu)
 }
 
+## ---- release provenance ----------------------------------------------------
+
+#' Refuse to promote a release from a worktree that does not match HEAD.
+#'
+#' The manifest records `git rev-parse HEAD` as the source of the numbers. That
+#' record is only true if the worktree matched HEAD while they were produced;
+#' with uncommitted edits present it names a tree that generated nothing.
+#'
+#' This does NOT establish that a promoted bundle regenerates from HEAD. A
+#' reporting change made after promotion still splits a release across two
+#' commits, and the identifier hashes HEAD at run time while the bundle is
+#' committed afterwards, so it necessarily names the parent state. Both are
+#' recorded in bayesian/docs/release_provenance.md and neither is repaired here.
+#' What this closes is the worse case: released numbers produced by source that
+#' was never committed at all.
+assert_clean_worktree <- function(root = ".") {
+  st <- suppressWarnings(
+    system2("git", c("-C", root, "status", "--porcelain"), stdout = TRUE, stderr = FALSE))
+  ## character(0) is returned both by a clean worktree and by a call that failed,
+  ## so the exit status is checked rather than the emptiness of the output.
+  code <- attr(st, "status")
+  if (!is.null(code) && code != 0L)
+    stop("Refusing to promote: cannot read the git state of ", root,
+         ". A release must be identified by a commit.")
+  if (length(st))
+    stop("Refusing to promote from a dirty worktree: ", length(st),
+         " uncommitted change(s), including ",
+         paste(trimws(substring(utils::head(st, 3), 4)), collapse = ", "),
+         ". The manifest would record a commit that did not produce these numbers.")
+  invisible(TRUE)
+}
+
 ## ---- canonicalisation ------------------------------------------------------
 
 #' Write a data frame in a form whose SHA-256 is reproducible across machines.
