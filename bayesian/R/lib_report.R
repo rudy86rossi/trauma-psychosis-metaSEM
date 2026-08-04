@@ -43,6 +43,9 @@ collate_results <- function(fit_results) {
     predict     = grab("predict"),
     contrasts   = grab("contrasts"),
     heterogeneity = grab("heterogeneity"),
+    pmed        = grab("pmed"),
+    pmed_diag   = grab("pmed_diag"),
+    pmed_draws  = grab("pmed_draws"),
     ## Prior predictive and power scaling, previously computed and discarded.
     power_scaling = rbind_fill(lapply(flat, function(x) x$power_scaling)),
     prior_predictive = rbind_fill(lapply(flat, function(x) x$prior_predictive$summary)),
@@ -125,6 +128,139 @@ cross_layer_table <- function(cfg, results, lock) {
   d <- do.call(rbind, out); rownames(d) <- NULL; d
 }
 
+## ---- the percentage carried by the indirect path ----------------------------
+
+#' Apply the post hoc reportability rule and split the pathways.
+#'
+#' POST HOC. This rule was written on 3 August 2026, after run_c9cb1a366dfb, at
+#' the co-authors' request, and before the refit that tests it. It is not
+#' prespecified and is never described as such.
+#'
+#' Returned in three parts, and every pathway appears in the audit whatever
+#' happens to it:
+#'
+#'   released  passing pathways, with the percentage
+#'   withheld  failing pathways, WITHOUT a percentage, naming the condition
+#'   audit     all pathways, with every retained quantity, released or not
+#'
+#' A median outside 0 to 100 is not treated as a computational failure. It is the
+#' inconsistent-mediation or suppression regime, it is retained in the audit, and
+#' it fails the unit-interval condition on its own merits rather than by being
+#' discarded.
+#'
+#' @param pmed the collated per-pathway ratio summaries.
+#' @param diagnostics the fit diagnostics table, so the sampler condition is read
+#'   from the parent fit rather than assumed.
+proportion_mediated_tables <- function(cfg, pmed, diagnostics) {
+  if (is.null(pmed) || !nrow(pmed)) return(NULL)
+  pm <- cfg$proportion_mediated
+  d  <- pmed[pmed$fit_class == "stan_primary" & pmed$moderator == "null", ]
+  if (!nrow(d)) return(NULL)
+
+  ## Condition one. The parent fit passed every sampler diagnostic already
+  ## applied to the release, read from the diagnostics table rather than
+  ## re-derived, so the two cannot drift apart.
+  dg <- diagnostics[match(d$fit_id, diagnostics$fit_id), ]
+  d$fit_diagnostics_pass <- diagnostics_pass(dg, cfg)
+
+  ## Condition two. Separation of the DENOMINATOR from zero, at the primary
+  ## displacement. The grid is carried alongside as a post hoc sensitivity range,
+  ## not as a set of competing standards.
+  primary_col <- sprintf("p_total_gt_%g", pm$delta_primary)
+  if (!primary_col %in% names(d))
+    stop("The gate needs ", primary_col, ", which the extraction did not produce. ",
+         "delta_primary and delta_grid have drifted apart.")
+  d$p_total_gt_delta <- d[[primary_col]]
+  d$delta_primary    <- pm$delta_primary
+  d$cond_separation  <- d$p_total_gt_delta >= pm$min_p_total_gt_delta
+
+  ## Condition three. Mass of the ratio inside the unit interval. Outside it the
+  ## word "percentage" stops conveying what a reader will take from it.
+  d$cond_unit_interval <- d$p_in_range >= pm$min_p_in_unit_interval
+
+  d$gate_pass <- d$fit_diagnostics_pass & d$cond_separation & d$cond_unit_interval
+  d$failed_conditions <- vapply(seq_len(nrow(d)), function(i) {
+    f <- c(if (!d$fit_diagnostics_pass[i]) "sampler diagnostics",
+           if (!d$cond_separation[i])
+             sprintf("P(total > %g) = %.3f, below %.2f", pm$delta_primary,
+                     d$p_total_gt_delta[i], pm$min_p_total_gt_delta),
+           if (!d$cond_unit_interval[i])
+             sprintf("P(0 < percentage < 100) = %.3f, below %.2f",
+                     d$p_in_range[i], pm$min_p_in_unit_interval))
+    if (length(f)) paste(f, collapse = "; ") else NA_character_
+  }, character(1))
+
+  ## The heuristic, reported and never decisive. A signal-to-noise ratio on the
+  ## denominator is not a Fieller-derived rule and is not presented as one; it is
+  ## published so a reader can see how the two views of separation compare.
+  for (h in unlist(pm$heuristic_median_sd_grid))
+    d[[sprintf("heuristic_median_sd_ge_%g", h)]] <- d$total_median_sd_ratio >= h
+
+  keep_released <- c("pathway", "label", "k_samples", "median", "q_lo", "q_hi",
+                     "p_in_range", "p_total_gt_delta", "delta_primary",
+                     "mcse_median", "mcse_q_lo", "mcse_q_hi", "n_draws")
+  released <- d[d$gate_pass, intersect(keep_released, names(d)), drop = FALSE]
+
+  ## The withheld table carries NO percentage. Naming the condition is the point;
+  ## printing the number beside the warning is what the earlier release did.
+  withheld <- d[!d$gate_pass,
+                intersect(c("pathway", "label", "k_samples", "failed_conditions",
+                            "p_in_range", "p_total_gt_delta",
+                            "delta_primary"), names(d)), drop = FALSE]
+
+  rownames(released) <- NULL; rownames(withheld) <- NULL
+  audit <- d[, setdiff(names(d), "fit_class"), drop = FALSE]
+  rownames(audit) <- NULL
+
+  if (nrow(released) + nrow(withheld) != nrow(d))
+    stop("The released and withheld percentage tables do not partition the ",
+         nrow(d), " pathways.")
+
+  list(released = released, withheld = withheld, audit = audit)
+}
+
+#' How the percentage and its released-or-withheld status move across every
+#' sensitivity class the pathway was refitted under.
+#'
+#' The classification matters as much as the value. A percentage that shifts two
+#' points but flips from released to withheld under a cohort deletion is more
+#' fragile than one that shifts eight points and stays released throughout, and a
+#' fixed movement threshold cannot see the difference.
+proportion_mediated_stability <- function(cfg, pmed, diagnostics) {
+  if (is.null(pmed) || !nrow(pmed)) return(NULL)
+  ## The prior predictive fits are excluded. They are fitted with the likelihood
+  ## switched off, so their ratio is a draw from the PRIOR, centred near zero
+  ## because the prior deliberately does not presuppose mediation. Comparing a
+  ## posterior median of 55 against a prior median of -0.003 and calling the
+  ## difference instability would report the prior's neutrality as a defect, and
+  ## it dominated every other class in the first run.
+  d <- pmed[pmed$moderator == "null" & pmed$fit_class != "prior_predictive", ]
+  if (!nrow(d)) return(NULL)
+  pm <- cfg$proportion_mediated
+  primary_col <- sprintf("p_total_gt_%g", pm$delta_primary)
+
+  dg <- diagnostics[match(d$fit_id, diagnostics$fit_id), ]
+  d$gate_pass <- diagnostics_pass(dg, cfg) &
+    d[[primary_col]] >= pm$min_p_total_gt_delta &
+    d$p_in_range >= pm$min_p_in_unit_interval
+
+  do.call(rbind, lapply(split(d, d$pathway), function(g) {
+    ref <- g[g$fit_class == "stan_primary", ]
+    if (!nrow(ref)) return(NULL)
+    do.call(rbind, lapply(split(g, g$fit_class), function(s) {
+      data.frame(pathway = g$pathway[1], label = g$label[1],
+                 fit_class = s$fit_class[1], n_refits = nrow(s),
+                 primary_median = ref$median[1],
+                 median_min = min(s$median), median_max = max(s$median),
+                 max_abs_shift_from_primary = max(abs(s$median - ref$median[1])),
+                 n_released = sum(s$gate_pass),
+                 n_withheld = sum(!s$gate_pass),
+                 classification_stable = all(s$gate_pass == ref$gate_pass[1]),
+                 stringsAsFactors = FALSE)
+    }))
+  }))
+}
+
 ## ---- tables -----------------------------------------------------------------
 
 build_tables <- function(cfg, lock, results, cross_layer, freq, sbc) {
@@ -154,11 +290,10 @@ build_tables <- function(cfg, lock, results, cross_layer, freq, sbc) {
   predict <- results$predict[results$predict$fit_class == "stan_primary", ]
 
   ## Whether the total effect is separated from zero is retained as a reported
-  ## fact about each pathway. It formerly also gated an `interpretable` flag on
-  ## the proportion mediated. That quantity has been removed from the release
-  ## outright: a ratio whose denominator can approach zero is not made
-  ## reportable by a flag saying when it is not. See
-  ## bayesian/docs/proportion_mediated_removed.md.
+  ## fact about each pathway. The percentage carried by the indirect path uses a
+  ## stronger condition on the same denominator, stated in config/analysis.yml
+  ## and applied in proportion_mediated_tables() above. See
+  ## bayesian/docs/proportion_mediated.md.
   tot <- pooled[pooled$quantity == "total", ]
   tot$total_excludes_zero <- tot$q_lo > 0 | tot$q_hi < 0
   pooled <- merge(pooled, tot[, c("pathway", "moderator", "contrast_index",
@@ -284,8 +419,15 @@ build_tables <- function(cfg, lock, results, cross_layer, freq, sbc) {
     rownames(targeted) <- NULL
   }
 
+  pmt <- proportion_mediated_tables(cfg, results$pmed, results$diagnostics)
+
   list(headline = headline, slopes = dz, slopes_all = prim_slopes,
        targeted_sensitivity = targeted,
+       pmed_released = pmt$released, pmed_withheld = pmt$withheld,
+       pmed_audit = pmt$audit, pmed_diagnostics = results$pmed_diag,
+       pmed_draws = results$pmed_draws,
+       pmed_stability = proportion_mediated_stability(cfg, results$pmed,
+                                                      results$diagnostics),
        pooled = pooled, predict = predict, pi_summary = pi_summary,
        contrasts = results$contrasts[results$contrasts$fit_class == "stan_primary", ],
        cross_layer = cross_layer, frequentist = freq,
@@ -444,6 +586,9 @@ gate_expected_reportable <- function(cfg, lock, tables) {
 
 promote_run <- function(cfg, analysis_id, data_sha, lock, results, tables,
                         cross_layer, ledger, sbc, freq, gate_diag = NULL, root = ".") {
+  ## Before anything is staged: the manifest is about to name a commit as the
+  ## source of these numbers, and that claim has to be true when it is written.
+  assert_clean_worktree(root)
   staging <- file.path(root, "bayesian", "results", "_staging")
   final   <- file.path(root, "bayesian", "results", paste0("run_", analysis_id))
   unlink(staging, recursive = TRUE)
@@ -482,6 +627,30 @@ promote_run <- function(cfg, analysis_id, data_sha, lock, results, tables,
   w(tables$prior_stability, "tables", "prior_grid_stability.csv")
   w(tables$decided,         "tables", "decisions.csv")
   w(tables$vz_comparison,   "tables", "vz_comparison.csv")
+
+  ## The percentage carried by the indirect path. Released and withheld are
+  ## separate files so a withheld pathway cannot be read as a reported one, and
+  ## the audit carries every pathway whatever its status.
+  w(tables$pmed_released,   "tables", "proportion_mediated.csv")
+  ## Written even when empty, headers and no rows. w() skips an empty frame, and
+  ## an absent file cannot be distinguished from a forgotten one: a reader would
+  ## have to infer "nothing was withheld" from a gap, which is the exact failure
+  ## this design exists to avoid. An empty table says it explicitly.
+  if (!is.null(tables$pmed_audit))
+    write.csv(tables$pmed_withheld %||% tables$pmed_audit[0, , drop = FALSE],
+              file.path(staging, "tables", "proportion_mediated_withheld.csv"),
+              row.names = FALSE, na = "")
+  w(tables$pmed_audit,      "tables", "proportion_mediated_audit.csv")
+  w(tables$pmed_stability,  "tables", "proportion_mediated_stability.csv")
+  w(tables$pmed_diagnostics, "diagnostics", "proportion_mediated_diagnostics.csv")
+  ## The ratio's own draws, so it can be recomputed or replotted without a
+  ## refit. Compressed: 12,000 draws per pathway is not small, and a summary
+  ## cannot answer a question about the shape of a possibly bimodal posterior.
+  if (!is.null(tables$pmed_draws) && NROW(tables$pmed_draws)) {
+    gz <- gzfile(file.path(staging, "diagnostics", "pmed_draws.csv.gz"), "w")
+    utils::write.csv(tables$pmed_draws, gz, row.names = FALSE, na = "")
+    close(gz)
+  }
 
   w(tables$diagnostics,     "diagnostics", "fit_diagnostics.csv")
   w(ledger,                 "diagnostics", "fit_ledger.csv")

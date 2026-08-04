@@ -675,7 +675,13 @@ sample_review_queue <- function(samples, ALL, smap) {
 #' Generated here and asserted verbatim by check_documents(), so the prose and
 #' the registry cannot drift apart: editing the sentence fails the build, and a
 #' change in the evidence rewrites both at once.
-identity_caveat <- function(samples, smap) {
+#'
+#' @param effects lock$effects, one row per pathway/instrument/effect estimate,
+#'   with a `sample_id` and an `excluded` flag. Read only to confirm a disputed
+#'   cohort has actually stopped contributing before that is asserted in
+#'   prose; never stored on samples.csv or sample_map.csv, so this function
+#'   takes it as a fourth, optional argument rather than growing the registry.
+identity_caveat <- function(samples, smap, effects = NULL) {
   n  <- nrow(smap)
   ne <- sum(smap$evidence_status == "evidenced")
   nd <- sum(smap$evidence_status == "disputed")
@@ -686,6 +692,41 @@ identity_caveat <- function(samples, smap) {
     return(paste0("Sample identity is curated in `data/provenance/sample_map.csv`; all ",
                   n, " report-to-cohort assertions were checked against a named source, ",
                   "with the evidence, the person who accepted it and the date recorded."))
+
+  ## Every assertion has been checked (nu == 0) but at least one is disputed
+  ## rather than evidenced. This is not "some remain unevidenced": it is a
+  ## separate, stronger claim, and it may only be made once the disputed
+  ## cohort has actually stopped contributing to the analysis, not merely
+  ## been flagged. If it has not, that is an inconsistency worth stopping the
+  ## build for rather than describing in careful prose.
+  if (nu == 0L && nd > 0L) {
+    disputed_ids <- smap$sample_id[smap$evidence_status == "disputed"]
+    if (is.null(effects))
+      stop("identity_caveat() needs `effects` to confirm a disputed sample_id ",
+           "has been excluded from the live analysis before it can describe ",
+           "the dispute as settled.")
+    ## all() over zero rows is vacuously TRUE, which would let a disputed
+    ## sample_id with no matching effect row at all pass as "excluded" when it
+    ## was never checked in the first place. Require at least one matching
+    ## row, none of them missing an excluded value, and every one excluded.
+    disputed_rows <- effects[effects$sample_id %in% disputed_ids, , drop = FALSE]
+    if (!nrow(disputed_rows) || anyNA(disputed_rows$excluded) ||
+        !all(disputed_rows$excluded))
+      stop("Row(s) for a disputed sample_id remain in the live analysis, or no ",
+           "effect row could be found to confirm exclusion, for: ",
+           paste(sort(unique(disputed_ids)), collapse = ", "),
+           ". A disputed identity must be excluded from the analysed set before ",
+           "its resolution can be described as settled.")
+    return(sprintf(paste0(
+      "Sample identity is curated in `data/provenance/sample_map.csv`. All %d ",
+      "report-to-cohort assertions have been checked against named sources: %d are ",
+      "evidenced and %d %s disputed. The disputed %s excluded from the analysed ",
+      "set. Consequently, no assertion remains unevidenced, and all report-to-cohort ",
+      "mappings used in the analysis are evidenced against named sources."),
+      n, ne, nd, if (nd == 1L) "is" else "are",
+      if (nd == 1L) "assertion is" else "assertions are"))
+  }
+
   sprintf(paste0("Sample identity is curated in `data/provenance/sample_map.csv`. %d of %d ",
                  "report-to-cohort assertions have been evidenced against a named source%s; ",
                  "the remaining %d rest on the author and year printed in the extraction ",
@@ -694,6 +735,38 @@ identity_caveat <- function(samples, smap) {
           ne, n,
           if (nd) sprintf(" and %d %s disputed", nd, if (nd == 1L) "is" else "are") else "",
           nu)
+}
+
+## ---- release provenance ----------------------------------------------------
+
+#' Refuse to promote a release from a worktree that does not match HEAD.
+#'
+#' The manifest records `git rev-parse HEAD` as the source of the numbers. That
+#' record is only true if the worktree matched HEAD while they were produced;
+#' with uncommitted edits present it names a tree that generated nothing.
+#'
+#' This does NOT establish that a promoted bundle regenerates from HEAD. A
+#' reporting change made after promotion still splits a release across two
+#' commits, and the identifier hashes HEAD at run time while the bundle is
+#' committed afterwards, so it necessarily names the parent state. Both are
+#' recorded in bayesian/docs/release_provenance.md and neither is repaired here.
+#' What this closes is the worse case: released numbers produced by source that
+#' was never committed at all.
+assert_clean_worktree <- function(root = ".") {
+  st <- suppressWarnings(
+    system2("git", c("-C", root, "status", "--porcelain"), stdout = TRUE, stderr = FALSE))
+  ## character(0) is returned both by a clean worktree and by a call that failed,
+  ## so the exit status is checked rather than the emptiness of the output.
+  code <- attr(st, "status")
+  if (!is.null(code) && code != 0L)
+    stop("Refusing to promote: cannot read the git state of ", root,
+         ". A release must be identified by a commit.")
+  if (length(st))
+    stop("Refusing to promote from a dirty worktree: ", length(st),
+         " uncommitted change(s), including ",
+         paste(trimws(substring(utils::head(st, 3), 4)), collapse = ", "),
+         ". The manifest would record a commit that did not produce these numbers.")
+  invisible(TRUE)
 }
 
 ## ---- canonicalisation ------------------------------------------------------

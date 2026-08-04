@@ -3,15 +3,15 @@
 Prepared by ricardotwumasi. British English throughout. Results are in
 `BAYESIAN_METAREG_RESULTS.md`.
 
-Generated from `results/run_c9cb1a366dfb/`. Version numbers and scale constants are read from the run manifest and `config/analysis.yml`.
+Generated from `results/run_abc9305d0d01/`. Version numbers and scale constants are read from the run manifest and `config/analysis.yml`.
 
 ## Methods text for the manuscript
 
 We replaced the frequentist two-stage meta-analytic structural equation model with a Bayesian analysis. The corrected frequentist results were retained only as internal validation targets; they are not reported as co-primary findings, and their p values were not used to arbitrate disagreements with the posterior.
 
-The intended analytical unit was one participant cohort, not one publication, spreadsheet row or instrument, and for most included reports that identity is unevidenced against the source papers. A cohort contributed at most one triplet of correlations to any pathway. Multiple eligible instruments administered to the same participants did not increase the number of studies and were not averaged, because an average describes no defined construct and conceals the dependence induced by shared participants. Where a cohort supplied more than one eligible instrument, one was selected by a prespecified hierarchy favouring commensurability with the other included cohorts, and the alternative was retained as a replacement sensitivity analysis.
+The intended analytical unit was one participant cohort, not one publication, spreadsheet row or instrument; identity is curated in `data/provenance/sample_map.csv`. A cohort contributed at most one triplet of correlations to any pathway. Multiple eligible instruments administered to the same participants did not increase the number of studies and were not averaged, because an average describes no defined construct and conceals the dependence induced by shared participants. Where a cohort supplied more than one eligible instrument, one was selected by a prespecified hierarchy favouring commensurability with the other included cohorts, and the alternative was retained as a replacement sensitivity analysis.
 
-Sample identity is curated in `data/provenance/sample_map.csv`. 9 of 41 report-to-cohort assertions have been evidenced against a named source and 1 is disputed; the remaining 31 rest on the author and year printed in the extraction workbook and have not been checked against the papers. The analytical unit is therefore derived and has not been externally verified.
+Sample identity is curated in `data/provenance/sample_map.csv`. All 41 report-to-cohort assertions have been checked against named sources: 40 are evidenced and 1 is disputed. The disputed assertion is excluded from the analysed set. Consequently, no assertion remains unevidenced, and all report-to-cohort mappings used in the analysis are evidenced against named sources.
 
 Each included sample contributed three correlations among childhood trauma (X), the proposed mediator (M) and the psychosis outcome (Y), in the fixed order r(X,M), r(X,Y), r(M,Y). Correlations were Fisher-z transformed. Because the three correlations are calculated in the same participants they are not independent, so each study's full 3 by 3 within-study sampling covariance matrix on the z scale was supplied to the model as known, constructed with `metafor::rcalc(rtoz = TRUE)`.
 
@@ -21,7 +21,9 @@ The **primary layer** was a purpose-written Stan model in which the between-stud
 
         r(M,Y) = r(X,M) r(X,Y) + r(M,Y|X) sqrt[(1 - r(X,M)^2)(1 - r(X,Y)^2)]
 
-guarantees that every posterior draw defines a positive-definite correlation matrix, which a hierarchy placed on the three zero-order correlations does not. From each draw the standardised mediation model M = aX + e, Y = c'X + bM + e was recovered exactly, giving a = r(X,M), b = [r(M,Y) - r(X,M) r(X,Y)] / [1 - r(X,M)^2], c' = [r(X,Y) - r(X,M) r(M,Y)] / [1 - r(X,M)^2], the indirect effect ab and the total effect c' + ab = r(X,Y). These were computed for the population-average correlation matrix, for each study, and for a new-study predictive distribution. The proportion mediated ab / (c' + ab) was not computed: it is unbounded and heavy-tailed as the total effect approaches zero, so it is not a usable estimand at these study counts.
+guarantees that every posterior draw defines a positive-definite correlation matrix, which a hierarchy placed on the three zero-order correlations does not. From each draw the standardised mediation model M = aX + e, Y = c'X + bM + e was recovered exactly, giving a = r(X,M), b = [r(M,Y) - r(X,M) r(X,Y)] / [1 - r(X,M)^2], c' = [r(X,Y) - r(X,M) r(M,Y)] / [1 - r(X,M)^2], the indirect effect ab and the total effect c' + ab = r(X,Y). These were computed for the population-average correlation matrix, for each study, and for a new-study predictive distribution.
+
+The **percentage of the pooled association represented by the indirect path** was added as a post hoc analysis amendment after the previous release, at the co-authors' request, and is reported as a descriptive companion to ab rather than as the evidence for mediation. It is 100 ab / (c' + ab), evaluated draw-wise on the population-average parameters of the unmoderated models, so numerator and denominator come from the same draw. It is not the average of the study-specific ratios, which differs because the transformation is nonlinear. The denominator has positive posterior density at zero, so the ratio has no finite mean and no finite standard deviation; it is summarised by its posterior median and equal-tailed 95 per cent credible interval only, and neither a mean nor a standard deviation of it is reported anywhere. Convergence was judged by rank-normalised R-hat, which depends only on the ordering of the draws and so is valid for an estimand without moments, together with effective sample size and Monte Carlo standard error at the median and at both interval endpoints. A pathway's percentage was released only where its parent fit passed every sampler diagnostic and both posterior probability conditions stated in the configuration were met; the thresholds are post hoc sensitivity values rather than clinically validated boundaries, and every pathway is retained in the audit table whether or not it was released.
 
 The **reference layer** was fitted in `brms` and models the three Fisher-z correlations directly, with the known sampling covariance supplied through `fcor()` and the residual standard deviation fixed to 1 by a constant prior, and with diagonal between-study random effects by correlation type. It is the like-for-like comparison with the frequentist zero-order analysis. It was not treated as the arbiter where the two layers disagreed.
 
@@ -124,11 +126,11 @@ This is a screening-level check, not high-powered proof of calibration, and it i
 | --- | --- |
 | R | R version 4.4.2 (2024-10-31) |
 | CmdStan | 2.36.0 |
-| Analysis identifier | c9cb1a366dfb |
-| Source commit | 29f78bb9d8d2 |
+| Analysis identifier | abc9305d0d01 |
+| Source commit | d12bf4b2a6e9 |
 | Locked analysis table | 6aa4705709eb0db8 |
-| Configuration | 443ca6cbd2f7e8cf |
-| Stan source | 748a11efafb07854 |
+| Configuration | 2a2f0502b6558902 |
+| Stan source | 0f95ec7ba6f05783 |
 | renv lockfile | 4e0bec03ba9bef9e |
 
 The analysis identifier is derived deterministically from the frozen source commit, the canonical data hash, the validated configuration hash, the Stan source hash and the `renv.lock` hash, so a run cannot be confused with one produced from different inputs.
@@ -137,7 +139,7 @@ The analysis identifier is derived deterministically from the frozen source comm
 The whole analysis is one `targets` graph. Outputs are written to a staging area and promoted atomically only after every gate passes, with the run manifest written last, so an interrupted attempt cannot resemble a finished release. There is no second, sequential driver.
 
 
-The fit plan contained 575 model specifications with stable identifiers. The release gate requires exact set equality between the expected and completed identifiers; the expected count is derived from the plan and is not recorded as a constant anywhere.
+The fit plan contained 637 model specifications with stable identifiers. The release gate requires exact set equality between the expected and completed identifiers; the expected count is derived from the plan and is not recorded as a constant anywhere.
 
 
 No modified source workbook is committed. The only binary inputs are the upstream extraction workbooks, and every departure from them is a row in `data/provenance/corrections.csv` or `data/provenance/quality_scores.csv`. The build verifies the upstream hash, requires each correction to address exactly one cell holding exactly the value it claims to replace, and verifies the row fingerprint before writing.

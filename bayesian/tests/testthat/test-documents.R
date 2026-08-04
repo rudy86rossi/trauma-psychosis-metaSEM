@@ -6,22 +6,32 @@
 # qualification, while all 32 registry rows were derived_unverified, and the
 # check passed.
 
-stub_lock <- function(n = 4L, evidenced = 0L) {
+stub_lock <- function(n = 4L, evidenced = 0L, disputed = 0L, disputed_excluded = TRUE) {
+  status <- c(rep("evidenced", evidenced), rep("disputed", disputed),
+             rep("unevidenced", n - evidenced - disputed))
   smap <- data.frame(
     sample_id = sprintf("S%03d", seq_len(n)),
-    evidence_status = c(rep("evidenced", evidenced), rep("unevidenced", n - evidenced)),
+    evidence_status = status,
     stringsAsFactors = FALSE)
   samples <- data.frame(sample_id = smap$sample_id,
                         verification_status = derive_cohort_status(smap$sample_id, smap),
                         stringsAsFactors = FALSE)
-  list(samples = samples, sample_map = smap)
+  ## One effect row per sample_id, standing in for lock$effects. Only the
+  ## disputed sample_id(s)' `excluded` flag is ever consulted, by
+  ## identity_caveat()'s "everything checked, one disputed" branch.
+  effects <- data.frame(sample_id = smap$sample_id,
+                        excluded = ifelse(smap$evidence_status == "disputed",
+                                          disputed_excluded, TRUE),
+                        stringsAsFactors = FALSE)
+  list(samples = samples, sample_map = smap, effects = effects)
 }
 
 ## A document containing only what the test puts in it, plus the caveat unless
 ## the test is about the caveat being absent.
 doc <- function(lines, lock, with_caveat = TRUE) {
   p <- tempfile(fileext = ".md")
-  if (with_caveat) lines <- c(lines, "", identity_caveat(lock$samples, lock$sample_map))
+  if (with_caveat)
+    lines <- c(lines, "", identity_caveat(lock$samples, lock$sample_map, lock$effects))
   writeLines(lines, p)
   p
 }
@@ -51,7 +61,7 @@ test_that("the generated identity caveat must appear verbatim", {
   expect_error(check_documents(p, list(), CFG, lock = lock), "caveat is absent")
 
   # An edited count is an edited claim.
-  cav <- identity_caveat(lock$samples, lock$sample_map)
+  cav <- identity_caveat(lock$samples, lock$sample_map, lock$effects)
   p2 <- doc(sub("0 of 4", "3 of 4", cav), lock, with_caveat = FALSE)
   expect_error(check_documents(p2, list(), CFG, lock = lock), "caveat is absent")
 })
@@ -60,10 +70,46 @@ test_that("a fully evidenced registry allows the assertion and switches the cave
   # The check must not harden into a permanent claim that the work was never
   # done. When every assertion is evidenced, the caveat states that instead.
   lock <- stub_lock(evidenced = 4L)
-  expect_match(identity_caveat(lock$samples, lock$sample_map),
+  expect_match(identity_caveat(lock$samples, lock$sample_map, lock$effects),
                "all 4 report-to-cohort assertions were checked")
   p <- doc("The analytical unit was one independent participant sample.", lock)
   expect_silent(invisible(check_documents(p, list(), CFG, lock = lock)))
+})
+
+test_that("zero unevidenced but one disputed and excluded states the analysed-set claim", {
+  # Not the same as "all evidenced": one assertion is disputed rather than
+  # evidenced, so the strongest sentence (identity_caveat's first branch) would
+  # overclaim. But it is also not "some remain unevidenced" (nu == 0), so the
+  # generic fallback sentence used to print "the remaining 0 rest on the
+  # author and year... and have not been checked", which contradicts itself.
+  lock <- stub_lock(n = 4L, evidenced = 3L, disputed = 1L, disputed_excluded = TRUE)
+  cav <- identity_caveat(lock$samples, lock$sample_map, lock$effects)
+  expect_match(cav, "All 4 report-to-cohort assertions have been checked")
+  expect_match(cav, "3 are evidenced and 1 is disputed")
+  expect_match(cav, "no assertion remains unevidenced")
+  expect_match(cav, "excluded from the analysed set")
+  expect_no_match(cav, "remaining 0")
+})
+
+test_that("a disputed identity that has not been excluded from analysis stops the build", {
+  # The stronger sentence claims every analysed mapping is evidenced. That
+  # claim is false if a disputed cohort is still contributing a live row, so
+  # identity_caveat() must refuse to print it rather than describe an
+  # unresolved dispute as settled.
+  lock <- stub_lock(n = 4L, evidenced = 3L, disputed = 1L, disputed_excluded = FALSE)
+  expect_error(identity_caveat(lock$samples, lock$sample_map, lock$effects),
+              "remain in the live analysis")
+})
+
+test_that("a disputed identity with no matching effect row is not vacuously excluded", {
+  # all() over zero rows is TRUE in R. Without an explicit row-count check, a
+  # disputed sample_id absent from `effects` entirely (a typo, or a cohort
+  # dropped from the analysis for an unrelated reason before anyone checked
+  # this) would pass the exclusion test by having nothing to fail it.
+  lock <- stub_lock(n = 4L, evidenced = 3L, disputed = 1L, disputed_excluded = TRUE)
+  lock$effects <- lock$effects[lock$effects$sample_id != "S004", , drop = FALSE]
+  expect_error(identity_caveat(lock$samples, lock$sample_map, lock$effects),
+              "no effect row could be found")
 })
 
 test_that("every blocked pattern matches the phrasing it exists to block", {

@@ -87,17 +87,26 @@ list(
   tar_target(fit_plan, build_fit_plan(cfg, lock)),
   tar_group_by(fit_plan_groups, fit_plan, fit_class, pathway),
 
+  # `stan_file` is referenced so that editing the model invalidates the fits.
+  # It contributes to analysis_id but was not a dependency of anything that
+  # COMPILES it, so a Stan-only change used to leave every fit cached and
+  # promote a bundle whose manifest advertised a model the numbers had never
+  # seen. Naming the target here is the durable repair; a one-off
+  # tar_invalidate() fixes one run and leaves the next one exposed.
   tar_target(
     fit_results,
-    lapply(seq_len(nrow(fit_plan_groups)),
-           function(i) safe_run_fit(cfg, lock, fit_plan_groups[i, ])),
+    {
+      stan_file
+      lapply(seq_len(nrow(fit_plan_groups)),
+             function(i) safe_run_fit(cfg, lock, fit_plan_groups[i, ]))
+    },
     pattern = map(fit_plan_groups),
     iteration = "list"
   ),
 
   # ---- simulation-based calibration ----------------------------------------
   tar_target(sbc_scenarios, cfg$sbc$scenarios, iteration = "list"),
-  tar_target(sbc_ranks, run_sbc_scenario(cfg, sbc_scenarios, lock),
+  tar_target(sbc_ranks, { stan_file; run_sbc_scenario(cfg, sbc_scenarios, lock) },
              pattern = map(sbc_scenarios), iteration = "list"),
   tar_target(sbc_report, {
     r <- do.call(rbind, sbc_ranks)

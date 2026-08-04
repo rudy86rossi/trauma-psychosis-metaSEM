@@ -34,8 +34,8 @@ write_methods_doc <- function(R, cfg, lock, path) {
   ## required disclosure elsewhere in the document is not a licence for an
   ## unqualified claim here.
   add(paste("The intended analytical unit was one participant cohort, not one publication,",
-            "spreadsheet row or instrument, and for most included reports that identity is",
-            "unevidenced against the source papers. A cohort contributed at most one triplet of",
+            "spreadsheet row or instrument; identity is curated in",
+            "`data/provenance/sample_map.csv`. A cohort contributed at most one triplet of",
             "correlations to any pathway. Multiple eligible instruments administered to the same",
             "participants did not increase the number of studies and were not averaged, because an",
             "average describes no defined construct and conceals the dependence induced by shared",
@@ -43,7 +43,7 @@ write_methods_doc <- function(R, cfg, lock, path) {
             "selected by a prespecified hierarchy favouring commensurability with the other",
             "included cohorts, and the alternative was retained as a replacement sensitivity",
             "analysis."), "")
-  add(identity_caveat(lock$samples, lock$sample_map), "")
+  add(identity_caveat(lock$samples, lock$sample_map, lock$effects), "")
 
   add(paste("Each included sample contributed three correlations among childhood trauma (X), the",
             "proposed mediator (M) and the psychosis outcome (Y), in the fixed order r(X,M),",
@@ -66,9 +66,29 @@ write_methods_doc <- function(R, cfg, lock, path) {
             "exactly, giving a = r(X,M), b = [r(M,Y) - r(X,M) r(X,Y)] / [1 - r(X,M)^2],",
             "c' = [r(X,Y) - r(X,M) r(M,Y)] / [1 - r(X,M)^2], the indirect effect ab and the total",
             "effect c' + ab = r(X,Y). These were computed for the population-average correlation",
-            "matrix, for each study, and for a new-study predictive distribution. The proportion",
-            "mediated ab / (c' + ab) was not computed: it is unbounded and heavy-tailed as the",
-            "total effect approaches zero, so it is not a usable estimand at these study counts."), "")
+            "matrix, for each study, and for a new-study predictive distribution."), "")
+
+  ## POST HOC. Added after the previous release at the co-authors' request, with
+  ## the estimand and the reporting rule fixed before the refit that tested them.
+  ## The word prespecified is not used of it anywhere.
+  add(paste("The **percentage of the pooled association represented by the indirect path** was",
+            "added as a post hoc analysis amendment after the previous release, at the",
+            "co-authors' request, and is reported as a descriptive companion to ab rather than",
+            "as the evidence for mediation. It is 100 ab / (c' + ab), evaluated draw-wise on the",
+            "population-average parameters of the unmoderated models, so numerator and",
+            "denominator come from the same draw. It is not the average of the study-specific",
+            "ratios, which differs because the transformation is nonlinear. The denominator has",
+            "positive posterior density at zero, so the ratio has no finite mean and no finite",
+            "standard deviation; it is summarised by its posterior median and equal-tailed 95 per",
+            "cent credible interval only, and neither a mean nor a standard deviation of it is",
+            "reported anywhere. Convergence was judged by rank-normalised R-hat, which depends",
+            "only on the ordering of the draws and so is valid for an estimand without moments,",
+            "together with effective sample size and Monte Carlo standard error at the median and",
+            "at both interval endpoints. A pathway's percentage was released only where its",
+            "parent fit passed every sampler diagnostic and both posterior probability",
+            "conditions stated in the configuration were met; the thresholds are post hoc",
+            "sensitivity values rather than clinically validated boundaries, and every pathway is",
+            "retained in the audit table whether or not it was released."), "")
 
   add(paste("The **reference layer** was fitted in `brms` and models the three Fisher-z",
             "correlations directly, with the known sampling covariance supplied through `fcor()`",
