@@ -3,7 +3,7 @@
 Prepared by ricardotwumasi. British English throughout. Results are in
 `BAYESIAN_METAREG_RESULTS.md`.
 
-Generated from `results/run_afb5675a9a7a/`. Version numbers and scale constants are read from the run manifest and `config/analysis.yml`.
+Generated from `results/run_abc9305d0d01/`. Version numbers and scale constants are read from the run manifest and `config/analysis.yml`.
 
 ## Methods text for the manuscript
 
@@ -126,8 +126,8 @@ This is a screening-level check, not high-powered proof of calibration, and it i
 | --- | --- |
 | R | R version 4.4.2 (2024-10-31) |
 | CmdStan | 2.36.0 |
-| Analysis identifier | afb5675a9a7a |
-| Source commit | fd4ed2f3d99c |
+| Analysis identifier | abc9305d0d01 |
+| Source commit | d12bf4b2a6e9 |
 | Locked analysis table | 6aa4705709eb0db8 |
 | Configuration | 2a2f0502b6558902 |
 | Stan source | 0f95ec7ba6f05783 |

@@ -3,7 +3,7 @@
 Prepared by ricardotwumasi. British English throughout. Methods are in
 `BAYESIAN_METAREG_METHODS.md`.
 
-Every number below is generated from the tables in `results/run_afb5675a9a7a/`.
+Every number below is generated from the tables in `results/run_abc9305d0d01/`.
 None is transcribed by hand.
 
 ## 1. What the analysis found
@@ -31,18 +31,18 @@ These intervals describe the range of LATENT TRUE effects expected across new st
 
 The estimand is ab / total, evaluated draw-wise at the population-average parameter values of the unmoderated model, expressed as a percentage. It is not the average of the study-specific ratios: the transformation is nonlinear, so the two differ. The denominator is the pooled zero-order correlation between adversity and psychosis, which has positive posterior density at zero, so the ratio has no finite mean and no finite standard deviation. It is therefore summarised by its posterior median and equal-tailed 95 per cent credible interval, and no mean or standard deviation of it appears anywhere in this release. Rank-normalised R-hat, effective sample size and Monte Carlo error at each reported quantile are given in `diagnostics/proportion_mediated_diagnostics.csv`; the rank-normalised statistic depends only on the ordering of the draws and is insensitive to whether the estimand has moments (Vehtari et al., 2021).
 
-A pathway's percentage is released only if its parent fit passed every sampler diagnostic, the posterior probability that the total association exceeds 0.05 is at least 0.95, and the posterior probability that the percentage lies between 0 and 100 is at least 0.95. The displacement 0.05 is a post hoc sensitivity threshold, not a clinically validated boundary, and 0.025 and 0.1 are carried alongside it in `tables/proportion_mediated_audit.csv`. Of 6 pathways, 6 met the rule and 0 did not; every pathway is retained in the audit whatever its status.
+A pathway's percentage is released only if its parent fit passed every sampler diagnostic, the posterior probability that the total association exceeds 0.05 is at least 0.95, and the posterior probability that the percentage lies between 0 and 100 is at least 0.95. The displacement 0.05 is a post hoc sensitivity threshold, not a clinically validated boundary, and 0.025 and 0.100 are carried alongside it in `tables/proportion_mediated_audit.csv`. All 6 pathways met the rule; every pathway is retained in the audit whatever its status.
 
 | Pathway | k | Percentage [95% CrI] | P(total > threshold) | P(0 < percentage < 100) | Status |
 | --- | --- | --- | --- | --- | --- |
-| Dissociation to hallucinations |   10 | 55.5 [27.7, 99.7] | 1.000 | 0.976 | released |
-| Dissociation to delusions |    7 | 44.4 [20.4, 83.9] | 1.000 | 0.989 | released |
+| Dissociation to hallucinations |   10 | 55.5 [27.7, 99.7] | >0.999 | 0.976 | released |
+| Dissociation to delusions |    7 | 44.4 [20.4, 83.9] | >0.999 | 0.989 | released |
 | Dissociation to composite psychosis |    4 | 30.8 [1.7, 85.4] | 0.994 | 0.966 | released |
 | Negative schema to composite psychosis |    7 | 20.8 [0.2, 62.6] | 0.997 | 0.970 | released |
 | Negative schema to delusions |    5 | 25.7 [2.2, 97.5] | 0.980 | 0.959 | released |
 | Depression to composite psychosis |    5 | 33.4 [14.5, 56.0] | 0.999 | 0.996 | released |
 
-Each pathway was refitted under a robust Student-t likelihood, a weighted sampling-covariance construction, an alternative instrument where one exists, a prior grid on the intercept and heterogeneity scales, and every single-cohort deletion: 81 refits in total. The largest shift in any pathway's median across all of them was 55.5 percentage points. The released-or-withheld classification was unchanged in 19 of 31 pathway-by-class comparisons, the exceptions being Depression to composite psychosis under prior_predictive, Dissociation to composite psychosis under prior_predictive, Dissociation to composite psychosis under sens_loso_stan, Dissociation to composite psychosis under sens_prior_grid, Dissociation to delusions under prior_predictive, Dissociation to hallucinations under prior_predictive, Negative schema to composite psychosis under prior_predictive, Negative schema to composite psychosis under sens_loso_stan, Negative schema to delusions under prior_predictive, Negative schema to delusions under sens_loso_stan, Negative schema to delusions under sens_prior_grid, Negative schema to delusions under sens_vz_weighted. Per-class detail is in `tables/proportion_mediated_stability.csv`.
+Each pathway was refitted under a robust Student-t likelihood, a weighted sampling-covariance construction, an alternative instrument where one exists, a prior grid on the intercept and heterogeneity scales, and every single-cohort deletion: 75 refits in total. The largest shift in any pathway's median across all of them was 8.1 percentage points. The released-or-withheld classification was unchanged in 19 of 25 pathway-by-class comparisons, the exceptions being Dissociation to composite psychosis under cohort deletion, Dissociation to composite psychosis under the prior grid, Negative schema to composite psychosis under cohort deletion, Negative schema to delusions under cohort deletion, Negative schema to delusions under the prior grid, Negative schema to delusions under the weighted sampling-covariance construction. Per-class detail is in `tables/proportion_mediated_stability.csv`.
 
 No prediction interval is defined for this percentage. A ratio computed in a new study would be especially unstable, because the predictive distribution of the denominator is far more diffuse than its posterior. The credible interval above belongs to the population-average percentage; the prediction intervals reported in this section belong to the latent true indirect effect ab in a new study. They are different quantities and are not comparable.
 

@@ -136,12 +136,17 @@ writeup_proportion_mediated <- function(cfg, R) {
     "least %.2f, and the posterior probability that the percentage lies between 0 and",
     "100 is at least %.2f. The displacement %g is a post hoc sensitivity threshold, not",
     "a clinically validated boundary, and %s are carried alongside it in",
-    "`tables/proportion_mediated_audit.csv`. Of %d pathways, %d met the rule and %d did",
-    "not; every pathway is retained in the audit whatever its status."),
+    "`tables/proportion_mediated_audit.csv`. %s; every pathway is retained in the audit",
+    "whatever its status."),
     pm$delta_primary, pm$min_p_total_gt_delta, pm$min_p_in_unit_interval,
     pm$delta_primary,
     paste(fmt(setdiff(unlist(pm$delta_grid), pm$delta_primary), 3), collapse = " and "),
-    nrow(aud), NROW(rel), NROW(wit)), "")
+    ## "All six pathways met the rule" rather than "Of 6 pathways, 6 met the
+    ## rule and 0 did not", which is what a template with no zero case prints.
+    if (NROW(wit) == 0) sprintf("All %d pathways met the rule", nrow(aud))
+    else if (NROW(rel) == 0) sprintf("No pathway met the rule; all %d were withheld", nrow(aud))
+    else sprintf("%d of %d pathways met the rule and %d did not",
+                 NROW(rel), nrow(aud), NROW(wit))), "")
 
   ## One row per pathway, in the document's fixed pathway order.
   tab <- do.call(rbind, lapply(names(PATHWAY_PROSE), function(k) {
@@ -170,9 +175,18 @@ writeup_proportion_mediated <- function(cfg, R) {
   ## points but flips from released to withheld under a deletion is more fragile
   ## than one that moves eight and stays released, and a fixed movement threshold
   ## cannot tell the two apart.
+  CLASS_PROSE <- c(sens_robust_t = "the robust Student-t likelihood",
+                   sens_vz_weighted = "the weighted sampling-covariance construction",
+                   sens_alt_instrument = "the alternative instrument",
+                   sens_prior_grid = "the prior grid",
+                   sens_loso_stan = "cohort deletion")
   st <- R$pmed_stability
   if (!is.null(st) && nrow(st)) {
-    s <- st[st$fit_class != "stan_primary", ]
+    ## The prior predictive fits are not refits of the posterior: their ratio is
+    ## a draw from the prior, centred near zero because the prior does not
+    ## presuppose mediation, so comparing it here would report the prior's
+    ## neutrality as instability.
+    s <- st[!st$fit_class %in% c("stan_primary", "prior_predictive"), ]
     unstable <- s[!s$classification_stable, ]
     add(sprintf(paste(
       "Each pathway was refitted under a robust Student-t likelihood, a weighted",
@@ -187,7 +201,7 @@ writeup_proportion_mediated <- function(cfg, R) {
       if (nrow(unstable))
         sprintf(", the exceptions being %s",
                 paste(sprintf("%s under %s", PATHWAY_PROSE[unstable$pathway],
-                              unstable$fit_class), collapse = ", "))
+                              CLASS_PROSE[unstable$fit_class]), collapse = ", "))
       else ""), "")
   }
 
