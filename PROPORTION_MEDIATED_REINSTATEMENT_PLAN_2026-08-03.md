@@ -1,5 +1,21 @@
 # Reinstating a gated proportion mediated in the Bayesian reanalysis
 
+> **Superseded pre-run planning record.** This is a historical document, kept for the audit
+> trail and not rewritten. It uses the word "prespecified" in several places; that is wrong
+> and must not be repeated. The proportion-mediated analysis was a **post hoc** amendment,
+> and its estimand, thresholds and reporting rule were fixed before the refit that evaluated
+> them. The plan also expected five of six pathways to carry a percentage, with negative
+> schema to delusions withheld. **In `run_abc9305d0d01` all six pathways met the rule**;
+> negative schema to delusions fails the superseded median-to-standard-deviation heuristic
+> at 2.92 but meets both posterior probability conditions. For three pathways the
+> released-or-withheld classification was not stable to every single-cohort deletion. This
+> plan was reviewed before implementation, and the gate it proposes was replaced by the
+> posterior probability rule now in `config/analysis.yml`. What was actually done, and why,
+> is in
+> [`bayesian/docs/proportion_mediated.md`](bayesian/docs/proportion_mediated.md); the results
+> are in [`bayesian/BAYESIAN_METAREG_RESULTS.md`](bayesian/BAYESIAN_METAREG_RESULTS.md) and
+> [`bayesian/results/run_abc9305d0d01/`](bayesian/results/run_abc9305d0d01/).
+
 Plan prepared 3 August 2026 for Ricardo Twumasi. British English throughout.
 Concerns the `bayesian-reanalysis` branch of `trauma-psychosis-metaSEM`, release run
 `c9cb1a366dfb`. This document is a proposal. Nothing in the release has been changed.

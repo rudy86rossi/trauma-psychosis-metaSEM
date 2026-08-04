@@ -1,5 +1,19 @@
 # Memo to co-authors: reporting a percentage mediated
 
+> **Superseded pre-run planning record.** This is a historical document, kept for the
+> audit trail and not rewritten. The proportion-mediated analysis was a **post hoc**
+> amendment. Its estimand, thresholds and reporting rule were fixed before the refit that
+> evaluated them, but they were not prespecified, and this memo should not be cited as
+> though they were. This memo anticipated that the rule would release five pathways and
+> withhold negative schema to delusions. **In `run_abc9305d0d01` all six pathways met the
+> rule**, although for three of them the released-or-withheld classification was not stable
+> to every single-cohort deletion. The results that stand are in
+> [`bayesian/BAYESIAN_METAREG_RESULTS.md`](bayesian/BAYESIAN_METAREG_RESULTS.md), the method
+> in [`bayesian/BAYESIAN_METAREG_METHODS.md`](bayesian/BAYESIAN_METAREG_METHODS.md), the
+> reasoning in [`bayesian/docs/proportion_mediated.md`](bayesian/docs/proportion_mediated.md),
+> and the tables in
+> [`bayesian/results/run_abc9305d0d01/`](bayesian/results/run_abc9305d0d01/).
+
 3 August 2026. From Ricardo Twumasi. Two pages. The technical plan is in
 `PROPORTION_MEDIATED_REINSTATEMENT_PLAN_2026-08-03.md` for anyone who wants the working.
 
