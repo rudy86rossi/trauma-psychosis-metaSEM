@@ -3,7 +3,7 @@
 Prepared by ricardotwumasi. British English throughout. Methods are in
 `BAYESIAN_METAREG_METHODS.md`.
 
-Every number below is generated from the tables in `results/run_c9cb1a366dfb/`.
+Every number below is generated from the tables in `results/run_afb5675a9a7a/`.
 None is transcribed by hand.
 
 ## 1. What the analysis found
@@ -27,7 +27,26 @@ A finding that appears in only one layer is labelled as belonging to that layer.
 
 These intervals describe the range of LATENT TRUE effects expected across new studies drawn from the estimated population. They do not add the sampling error a future observed estimate would also carry, so a realised estimate would scatter more widely still. Their width is driven entirely by the between-study heterogeneity tau, which is weakly identified at this number of studies and therefore substantially prior-informed; the tau posteriors are reported in `tables/heterogeneity.csv` so that claim can be checked rather than taken on trust.
 
-**Proportion mediated is not reported.** The ratio ab / total is mathematically unbounded and heavy-tailed as the total effect approaches zero, so a finite central interval is not evidence that the quantity is well behaved and a diagnostic exemption would not make it one. It is not computed, tabulated or interpreted anywhere in this release. Percentages mediated reported in the descriptive systematic review are a separate summary of the individual published analyses and are not estimates from these models. See `docs/proportion_mediated_removed.md`.
+**Percentage of the pooled association represented by the indirect path.** This quantity is a POST HOC analysis amendment, added at the co-authors' request after the previous release and withheld from it. It is not prespecified. Its estimand, reporting rule and diagnostics were fixed before the refit that produced the values below. It is a descriptive companion to the indirect effect ab and does not replace ab as the evidence for mediation.
+
+The estimand is ab / total, evaluated draw-wise at the population-average parameter values of the unmoderated model, expressed as a percentage. It is not the average of the study-specific ratios: the transformation is nonlinear, so the two differ. The denominator is the pooled zero-order correlation between adversity and psychosis, which has positive posterior density at zero, so the ratio has no finite mean and no finite standard deviation. It is therefore summarised by its posterior median and equal-tailed 95 per cent credible interval, and no mean or standard deviation of it appears anywhere in this release. Rank-normalised R-hat, effective sample size and Monte Carlo error at each reported quantile are given in `diagnostics/proportion_mediated_diagnostics.csv`; the rank-normalised statistic depends only on the ordering of the draws and is insensitive to whether the estimand has moments (Vehtari et al., 2021).
+
+A pathway's percentage is released only if its parent fit passed every sampler diagnostic, the posterior probability that the total association exceeds 0.05 is at least 0.95, and the posterior probability that the percentage lies between 0 and 100 is at least 0.95. The displacement 0.05 is a post hoc sensitivity threshold, not a clinically validated boundary, and 0.025 and 0.1 are carried alongside it in `tables/proportion_mediated_audit.csv`. Of 6 pathways, 6 met the rule and 0 did not; every pathway is retained in the audit whatever its status.
+
+| Pathway | k | Percentage [95% CrI] | P(total > threshold) | P(0 < percentage < 100) | Status |
+| --- | --- | --- | --- | --- | --- |
+| Dissociation to hallucinations |   10 | 55.5 [27.7, 99.7] | 1.000 | 0.976 | released |
+| Dissociation to delusions |    7 | 44.4 [20.4, 83.9] | 1.000 | 0.989 | released |
+| Dissociation to composite psychosis |    4 | 30.8 [1.7, 85.4] | 0.994 | 0.966 | released |
+| Negative schema to composite psychosis |    7 | 20.8 [0.2, 62.6] | 0.997 | 0.970 | released |
+| Negative schema to delusions |    5 | 25.7 [2.2, 97.5] | 0.980 | 0.959 | released |
+| Depression to composite psychosis |    5 | 33.4 [14.5, 56.0] | 0.999 | 0.996 | released |
+
+Each pathway was refitted under a robust Student-t likelihood, a weighted sampling-covariance construction, an alternative instrument where one exists, a prior grid on the intercept and heterogeneity scales, and every single-cohort deletion: 81 refits in total. The largest shift in any pathway's median across all of them was 55.5 percentage points. The released-or-withheld classification was unchanged in 19 of 31 pathway-by-class comparisons, the exceptions being Depression to composite psychosis under prior_predictive, Dissociation to composite psychosis under prior_predictive, Dissociation to composite psychosis under sens_loso_stan, Dissociation to composite psychosis under sens_prior_grid, Dissociation to delusions under prior_predictive, Dissociation to hallucinations under prior_predictive, Negative schema to composite psychosis under prior_predictive, Negative schema to composite psychosis under sens_loso_stan, Negative schema to delusions under prior_predictive, Negative schema to delusions under sens_loso_stan, Negative schema to delusions under sens_prior_grid, Negative schema to delusions under sens_vz_weighted. Per-class detail is in `tables/proportion_mediated_stability.csv`.
+
+No prediction interval is defined for this percentage. A ratio computed in a new study would be especially unstable, because the predictive distribution of the denominator is far more diffuse than its posterior. The credible interval above belongs to the population-average percentage; the prediction intervals reported in this section belong to the latent true indirect effect ab in a new study. They are different quantities and are not comparable.
+
+This is a model-based decomposition of pooled, largely cross-sectional associations. It is not an individual-level causal percentage and it is not the expected effect of intervening on the mediator. Percentages mediated reported in the descriptive systematic review are a separate summary of the individual published analyses and are not estimates from these models. See `docs/proportion_mediated.md`.
 
 ## 3. Pooled mediation quantities
 
@@ -104,14 +123,14 @@ Agreement on the third coordinate is an **architecture-sensitivity** result, not
 
 ## 7. Model checking
 
-**Sampling.** Across all 575 fits: maximum R-hat 1.0041, minimum bulk effective sample size 1605, minimum tail effective sample size 1469, 1 divergent transition, 0 maximum-tree-depth events, minimum E-BFMI 0.50. Every fit met the convergence targets; the divergence position is set out below.
+**Sampling.** Across all 637 fits: maximum R-hat 1.0041, minimum bulk effective sample size 1605, minimum tail effective sample size 1469, 1 divergent transition, 0 maximum-tree-depth events, minimum E-BFMI 0.50. Every fit met the convergence targets; the divergence position is set out below.
 
-182 of 575 fits required an adapt_delta escalation, involving 196 escalation steps in total. Escalation is recorded per fit in the fit ledger rather than summarised away.
+195 of 637 fits required an adapt_delta escalation, involving 211 escalation steps in total. Escalation is recorded per fit in the fit ledger rather than summarised away.
 
 
-Divergent transitions: 1 in total across all 575 fits. Every one of the 66 primary fits, whose numbers are reported, had none; no tolerance applies to those.
+Divergent transitions: 1 in total across all 637 fits. Every one of the 66 primary fits, whose numbers are reported, had none; no tolerance applies to those.
 
-1 of the 509 sensitivity refits retained a divergence after exhausting the adapt_delta ladder, against a cap of 5, namely loso_brms|depress_cps|female|S029 (1). Deleting a study from an already small pathway can produce a geometry the sampler finds harder than the model being reported. They are named here rather than absorbed into a summary, so a reader can check whether any of them underlies a reported robustness count.
+1 of the 571 sensitivity refits retained a divergence after exhausting the adapt_delta ladder, against a cap of 5, namely loso_brms|depress_cps|female|S029 (1). Deleting a study from an already small pathway can produce a geometry the sampler finds harder than the model being reported. They are named here rather than absorbed into a summary, so a reader can check whether any of them underlies a reported robustness count.
 
 **The tolerance was adopted after a run exposed the issue, not prespecified for this analysis.** It is stated as a rule for subsequent runs, and the cap was fixed before the count was inspected, but describing it as prespecified here would be false. Every threshold other than this one applied to every fit without exception.
 
@@ -126,7 +145,7 @@ These checks detected **no gross conflict between the model and the data**. That
 **Prior predictive check.** 66 prespecified plausibility criteria across 6 pathways, all of which were met. The thresholds are recorded in `config/analysis.yml` and were committed before the run that tested them; the configuration hash forms part of the analysis identifier, so that ordering is verifiable rather than asserted. The criteria require the priors to COVER the published correlations tabulated in `bayesian/docs/prior_scope.md`, not to encode them: the priors remain weakly informative and are not literature-derived.
 
 
-**Prior and likelihood power scaling.** Sensitivity was archived for 342 quantities across the primary fits, of which 324 were evaluable; 18 rows were structurally inapplicable, being the moderator contrast in an intercept-only model, which has no contrast to span. Of the evaluable quantities 146 were flagged and 178 were not, and 87 of the flagged were heterogeneity parameters. This asks a different question from the prior grid: the grid refits at other prior widths and asks whether the conclusion moves, whereas power scaling asks which of the prior and the likelihood is driving each posterior.
+**Prior and likelihood power scaling.** Sensitivity was archived for 348 quantities across the primary fits, of which 330 were evaluable; 18 rows were structurally inapplicable, being the moderator contrast in an intercept-only model, which has no contrast to span. Of the evaluable quantities 146 were flagged and 184 were not, and 87 of the flagged were heterogeneity parameters. This asks a different question from the prior grid: the grid refits at other prior widths and asks whether the conclusion moves, whereas power scaling asks which of the prior and the likelihood is driving each posterior.
 
 A parameter flagged as prior-dominated is one the data barely inform, so its posterior should not be read as an empirical finding. This is expected for tau at four to ten studies and is the reason the prediction intervals are described as prior-informed. Full results, including any flag on the coordinate carrying a reported decision, are in `diagnostics/power_scaling.csv`.
 

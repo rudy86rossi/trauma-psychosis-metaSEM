@@ -228,7 +228,13 @@ proportion_mediated_tables <- function(cfg, pmed, diagnostics) {
 #' fixed movement threshold cannot see the difference.
 proportion_mediated_stability <- function(cfg, pmed, diagnostics) {
   if (is.null(pmed) || !nrow(pmed)) return(NULL)
-  d <- pmed[pmed$moderator == "null", ]
+  ## The prior predictive fits are excluded. They are fitted with the likelihood
+  ## switched off, so their ratio is a draw from the PRIOR, centred near zero
+  ## because the prior deliberately does not presuppose mediation. Comparing a
+  ## posterior median of 55 against a prior median of -0.003 and calling the
+  ## difference instability would report the prior's neutrality as a defect, and
+  ## it dominated every other class in the first run.
+  d <- pmed[pmed$moderator == "null" & pmed$fit_class != "prior_predictive", ]
   if (!nrow(d)) return(NULL)
   pm <- cfg$proportion_mediated
   primary_col <- sprintf("p_total_gt_%g", pm$delta_primary)
@@ -623,7 +629,14 @@ promote_run <- function(cfg, analysis_id, data_sha, lock, results, tables,
   ## separate files so a withheld pathway cannot be read as a reported one, and
   ## the audit carries every pathway whatever its status.
   w(tables$pmed_released,   "tables", "proportion_mediated.csv")
-  w(tables$pmed_withheld,   "tables", "proportion_mediated_withheld.csv")
+  ## Written even when empty, headers and no rows. w() skips an empty frame, and
+  ## an absent file cannot be distinguished from a forgotten one: a reader would
+  ## have to infer "nothing was withheld" from a gap, which is the exact failure
+  ## this design exists to avoid. An empty table says it explicitly.
+  if (!is.null(tables$pmed_audit))
+    write.csv(tables$pmed_withheld %||% tables$pmed_audit[0, , drop = FALSE],
+              file.path(staging, "tables", "proportion_mediated_withheld.csv"),
+              row.names = FALSE, na = "")
   w(tables$pmed_audit,      "tables", "proportion_mediated_audit.csv")
   w(tables$pmed_stability,  "tables", "proportion_mediated_stability.csv")
   w(tables$pmed_diagnostics, "diagnostics", "proportion_mediated_diagnostics.csv")
