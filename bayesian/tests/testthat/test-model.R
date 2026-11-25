@@ -117,10 +117,12 @@ test_that("the fit plan is well formed and derives its own size", {
   plan <- build_fit_plan(CFG, LOCK)
   expect_equal(anyDuplicated(plan$fit_id), 0L)
   expect_true(all(plan$layer %in% c("stan", "brms")))
-  expect_setequal(unique(plan$pathway), PATH_NAMES(CFG))
+  # Only pathways that meet the synthesis minimum are planned; extracted but
+  # ineligible pathways (dissoc_cps, k = 4) must never be fitted.
+  expect_setequal(unique(plan$pathway), SYNTH_NAMES(LOCK))
 
-  # Both layers get every pathway-by-moderator model, including the null.
-  n_models <- length(PATH_NAMES(CFG)) * (length(MOD_NAMES(CFG)) + 1L)
+  # Both layers get every eligible pathway-by-moderator model, including the null.
+  n_models <- length(SYNTH_NAMES(LOCK)) * (length(MOD_NAMES(CFG)) + 1L)
   expect_equal(sum(plan$fit_class == "stan_primary"), n_models)
   expect_equal(sum(plan$fit_class == "brms_primary"), n_models)
 
@@ -140,7 +142,10 @@ test_that("the fit plan is well formed and derives its own size", {
 
   # An alternative-instrument row exists only where a second instrument does.
   alt <- unique(plan$pathway[plan$fit_class == "sens_alt_instrument"])
-  expect_setequal(alt, names(LOCK$alternative)[!vapply(LOCK$alternative, is.null, logical(1))])
+  # Restricted to eligible pathways: the only second instrument (Blose 2023)
+  # belongs to dissoc_cps, so after the minimum is applied there is none.
+  has_alt <- names(LOCK$alternative)[!vapply(LOCK$alternative, is.null, logical(1))]
+  expect_setequal(alt, intersect(has_alt, SYNTH_NAMES(LOCK)))
 })
 
 test_that("the completeness gate fails on a missing or duplicated fit", {

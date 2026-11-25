@@ -281,6 +281,9 @@ sbc:
     - {id: sbc_binary_k10,     pathway: dissoc_hal,  moderator: clinical}
     - {id: sbc_cont_k5,        pathway: depress_cps, moderator: nos}
     - {id: sbc_clamped_k5,     pathway: depress_cps, moderator: female}
+    # dissoc_cps is below the synthesis minimum and is not a reported synthesis.
+    # Its locked k = 4 design is retained HERE only as a sparse-design
+    # calibration case for simulation-based calibration.
     - {id: sbc_smallest_k4,    pathway: dissoc_cps,  moderator: age}
 
 # --- sensitivity -------------------------------------------------------------
@@ -292,6 +295,26 @@ sensitivity:
   alternative_instrument: true
   vz_weighted: true
   priorsense: true
+  # Protocol-specified (PROSPERO CRD42024542972, version 2.0, 17 January 2026):
+  # effect sizes obtained by conversion rather than direct extraction from a
+  # correlation matrix are recorded for sensitivity analyses. Each primary
+  # triplet's source is classified in data/provenance/triplet_source.csv; this
+  # refit keeps only "direct" triplets. Unmoderated Stan models only, and only
+  # where at least synthesis$min_independent_cohorts cohorts remain; otherwise
+  # the pathway is recorded as not estimable rather than fitted.
+  direct_correlation_only: true
+
+# --- synthesis eligibility ---------------------------------------------------
+# A primary-synthesis eligibility rule, in line with the minimum of five studies
+# specified in the PROSPERO pre-registration (version 2.0): random-effects models
+# "when at least five studies examine the same mediator subcategory, trauma
+# category, and sufficiently homogeneous outcome". Counted as DISTINCT sample
+# identifiers, not rows. Every pathway is still extracted and locked; a pathway
+# below the minimum is recorded in synthesis_exclusions and never fitted.
+# Sensitivity refits that delete cohorts from an eligible pathway (for example
+# cohort deletion leaving four) are NOT subject to this rule; they are labelled.
+synthesis:
+  min_independent_cohorts: 5
 
 # --- excluded from the release -----------------------------------------------
 # Bayes factors were removed: the models were selected after inspecting

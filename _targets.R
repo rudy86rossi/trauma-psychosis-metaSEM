@@ -59,10 +59,13 @@ list(
   ## documents no longer match the assertions they were built from.
   tar_target(sample_map_file, "data/provenance/sample_map.csv", format = "file"),
   tar_target(samples_file, "data/provenance/samples.csv", format = "file"),
+  ## Per-triplet source classification (direct, converted, adjusted,
+  ## untraceable), which defines the protocol-specified conversion sensitivity.
+  tar_target(triplet_source_file, "data/provenance/triplet_source.csv", format = "file"),
   tar_target(stan_file, "bayesian/stan/masem_valid.stan", format = "file"),
 
   tar_target(lock, {
-    corrections_file; quality_file; sample_map_file; samples_file
+    corrections_file; quality_file; sample_map_file; samples_file; triplet_source_file
     build_data_lock(cfg, ".")
   }),
   tar_target(analysis_table, write_data_lock(lock, "."), format = "file"),

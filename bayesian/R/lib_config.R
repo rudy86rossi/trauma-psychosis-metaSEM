@@ -25,7 +25,7 @@ load_config <- function(path = "config/analysis.yml") {
 validate_config <- function(cfg) {
   need <- c("seed", "inputs", "pairs", "pathways", "moderators", "decision",
             "priors", "reportability", "instrument_priority", "sampling",
-            "diagnostics", "sbc", "sensitivity", "proportion_mediated")
+            "diagnostics", "sbc", "sensitivity", "proportion_mediated", "synthesis")
   miss <- setdiff(need, names(cfg))
   if (length(miss)) stop("analysis.yml is missing: ", paste(miss, collapse = ", "))
 
@@ -42,6 +42,10 @@ validate_config <- function(cfg) {
       stop("Moderator ", m, " nominal_contrast must be increasing.")
   }
   if (cfg$decision$sesoi_full <= 0) stop("sesoi_full must be positive.")
+
+  kmin <- cfg$synthesis$min_independent_cohorts
+  if (is.null(kmin) || kmin != round(kmin) || kmin < 2)
+    stop("synthesis$min_independent_cohorts must be a whole number of at least 2.")
 
   ## The percentage's reportability rule. Validated here so that a threshold
   ## typed as a percentage rather than a probability, which would pass every one
@@ -68,6 +72,29 @@ validate_config <- function(cfg) {
 MOD_NAMES  <- function(cfg) names(cfg$moderators)
 PATH_NAMES <- function(cfg) names(cfg$pathways)
 PAIRS      <- function(cfg) unlist(cfg$pairs)
+
+#' The pathways eligible for synthesis. PATH_NAMES() is every EXTRACTED pathway
+#' and is used only to build the lock; everything downstream of the lock (fit
+#' plan, frequentist targets, gates, tables, denominators) uses this set, so an
+#' extracted pathway below the cohort minimum cannot reappear in any of them.
+SYNTH_NAMES <- function(lock) lock$synthesis
+
+#' Reportability restricted to the synthesis set. The lock keeps the extraction
+#' level table (all pathways) for provenance; consumers that build or check
+#' results must read this one.
+synth_reportability <- function(lock)
+  lock$reportability[lock$reportability$pathway %in% lock$synthesis, , drop = FALSE]
+
+#' Which extracted pathways meet the cohort minimum, counted as DISTINCT sample
+#' identifiers so that one cohort entered twice cannot make up the number.
+synthesis_eligibility <- function(cfg, analysis) {
+  kmin <- cfg$synthesis$min_independent_cohorts
+  k <- vapply(analysis, function(d) length(unique(d$sample_id)), integer(1))
+  data.frame(pathway = names(analysis), k_independent = unname(k),
+             min_independent_cohorts = kmin, eligible = unname(k >= kmin),
+             rule = sprintf("at least %d independent cohorts (PROSPERO CRD42024542972, version 2.0)", kmin),
+             stringsAsFactors = FALSE)
+}
 
 sesoi_grid <- function(cfg) {
   g <- unlist(cfg$decision$sesoi_grid)

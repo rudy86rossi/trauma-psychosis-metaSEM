@@ -394,7 +394,7 @@ build_tables <- function(cfg, lock, results, cross_layer, freq, sbc) {
       g <- all_dz[all_dz$pathway == d$pathway & all_dz$moderator == d$moderator &
                     all_dz$coordinate == d$coordinate, ]
       if (!nrow(g)) return(NULL)
-      rp <- lock$reportability
+      rp <- synth_reportability(lock)
       arms <- rp$note[rp$pathway == d$pathway & rp$moderator == d$moderator]
       tau <- results$heterogeneity
       tau_max <- if (!is.null(tau)) {
@@ -420,6 +420,7 @@ build_tables <- function(cfg, lock, results, cross_layer, freq, sbc) {
   }
 
   pmt <- proportion_mediated_tables(cfg, results$pmed, results$diagnostics)
+  direct_r <- direct_r_table(cfg, lock, results)
 
   list(headline = headline, slopes = dz, slopes_all = prim_slopes,
        targeted_sensitivity = targeted,
@@ -431,7 +432,8 @@ build_tables <- function(cfg, lock, results, cross_layer, freq, sbc) {
        pooled = pooled, predict = predict, pi_summary = pi_summary,
        contrasts = results$contrasts[results$contrasts$fit_class == "stan_primary", ],
        cross_layer = cross_layer, frequentist = freq,
-       reportability = lock$reportability, contrast_support = lock$support,
+       reportability = synth_reportability(lock),
+       contrast_support = lock$support[lock$support$pathway %in% SYNTH_NAMES(lock), , drop = FALSE],
        stability = stability, loso_detail = loso_detail,
        prior_stability = prior_stability,
        sbc = sbc$per_parameter, sbc_audit = sbc$audit,
@@ -445,7 +447,32 @@ build_tables <- function(cfg, lock, results, cross_layer, freq, sbc) {
        ppc_overall = results$ppc_overall, ppc_study = results$ppc_study,
        ppc_coordinate = results$ppc_coordinate,
        diagnostics = results$diagnostics, vz_comparison = lock$vz_comparison,
+       synthesis_eligibility = lock$synthesis_eligibility, direct_r = direct_r,
        decided = decided)
+}
+
+#' The protocol-specified conversion sensitivity, one block per eligible pathway:
+#' its status (fitted, identical, not estimable), the cohorts it removes, and for
+#' fitted pathways the unmoderated indirect and total effects and the new-study
+#' prediction interval for the indirect effect, beside the primary model's.
+direct_r_table <- function(cfg, lock, results) {
+  if (!isTRUE(cfg$sensitivity$direct_correlation_only)) return(NULL)
+  sm <- direct_r_summary(cfg, lock)
+  cols <- c("pathway", "fit_class", "k_samples", "quantity", "median", "q_lo", "q_hi",
+            "hdi_lower", "hdi_upper", "p_gt0")
+  pick <- function(tab, what) {
+    if (is.null(tab) || !nrow(tab)) return(NULL)
+    d <- tab[tab$fit_class %in% c("stan_primary", "sens_direct_r") & tab$moderator == "null" &
+               tab$quantity %in% c("ind", "total") & tab$pathway %in% sm$pathway, , drop = FALSE]
+    if (!nrow(d)) return(NULL)
+    d <- d[, intersect(cols, names(d)), drop = FALSE]
+    d$interval <- what
+    d
+  }
+  est <- rbind(pick(results$pooled, "posterior"), pick(results$predict, "new-study prediction"))
+  if (is.null(est)) return(sm)
+  out <- merge(sm, est, by = "pathway", all.x = TRUE)
+  out[order(out$pathway, out$interval, out$quantity, out$fit_class), , drop = FALSE]
 }
 
 ## ---- gates ------------------------------------------------------------------
@@ -557,7 +584,7 @@ gate_diagnostic_thresholds <- function(cfg, results) {
 #' rather than being read as an absent result. The deliberately non-reportable
 #' models are an EXCLUDED expectation, not a gap.
 gate_expected_reportable <- function(cfg, lock, tables) {
-  rp <- lock$reportability
+  rp <- synth_reportability(lock)
   expected <- rp[rp$status != "not reported", c("pathway", "moderator")]
   excluded <- rp[rp$status == "not reported", c("pathway", "moderator")]
 
@@ -627,6 +654,8 @@ promote_run <- function(cfg, analysis_id, data_sha, lock, results, tables,
   w(tables$prior_stability, "tables", "prior_grid_stability.csv")
   w(tables$decided,         "tables", "decisions.csv")
   w(tables$vz_comparison,   "tables", "vz_comparison.csv")
+  w(tables$synthesis_eligibility, "tables", "synthesis_eligibility.csv")
+  w(tables$direct_r,        "tables", "direct_correlation_sensitivity.csv")
 
   ## The percentage carried by the indirect path. Released and withheld are
   ## separate files so a withheld pathway cannot be read as a reported one, and
