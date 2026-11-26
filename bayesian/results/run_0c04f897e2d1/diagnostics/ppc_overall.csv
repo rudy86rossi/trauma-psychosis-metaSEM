@@ -1,0 +1,26 @@
+"pathway","moderator","k_studies","coverage_conditional","coverage_new_study","n_extreme_ppp","worst_study","worst_ppp","max_maha_obs"
+"depress_cps","null",5,1,1,0,"Sengutta 2019",0.664833333333333,3.05362
+"depress_cps","age",5,1,1,0,"Sengutta 2019",0.642166666666667,2.566255
+"depress_cps","female",5,1,1,0,"Sengutta 2019",0.645,2.44576
+"depress_cps","nos",5,1,1,0,"Sengutta 2019",0.6005,3.196995
+"depress_cps","clinical",5,1,1,0,"Sengutta 2019",0.695,2.27798
+"dissoc_del","null",7,1,1,0,"Chiu 2024",0.206166666666667,5.30111
+"dissoc_del","age",7,1,1,0,"Chiu 2024",0.336,3.815245
+"dissoc_del","female",7,1,1,0,"Chiu 2024",0.20575,5.3713
+"dissoc_del","nos",7,1,1,0,"Chiu 2024",0.177666666666667,5.78877
+"dissoc_del","clinical",7,1,1,0,"Chiu 2024",0.245083333333333,4.90517
+"dissoc_hal","null",10,1,1,0,"Cole 2016",0.352083333333333,3.74891
+"dissoc_hal","age",10,1,1,0,"Cole 2016",0.34625,3.852075
+"dissoc_hal","female",10,1,1,0,"Varese, 2012",0.63775,2.96891
+"dissoc_hal","nos",10,1,1,0,"Cole 2016",0.345166666666667,3.954125
+"dissoc_hal","clinical",10,1,1,0,"Cole 2016",0.350083333333333,3.84159
+"negsch_cps","null",7,1,1,0,"Simpson 2020",0.535,2.51536
+"negsch_cps","age",6,1,1,0,"Simpson 2020",0.52875,2.54816
+"negsch_cps","female",7,1,1,0,"Simpson 2020",0.533833333333333,2.570815
+"negsch_cps","nos",7,1,1,0,"Boyda 2018",0.410583333333333,3.16519
+"negsch_cps","clinical",7,1,1,0,"Simpson 2020",0.523916666666667,2.52045
+"negsch_del","null",5,1,1,0,"Pinto-Gouveia 2014",0.41225,3.09603
+"negsch_del","age",5,1,1,0,"Ashford 2012",0.40575,3.2155
+"negsch_del","female",5,1,1,0,"Appiah 2017",0.371,3.56476
+"negsch_del","nos",5,1,1,0,"Pinto-Gouveia 2014",0.411,3.11673
+"negsch_del","clinical",5,1,1,0,"Ashford 2012",0.629333333333333,2.840465

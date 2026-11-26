@@ -1,0 +1,56 @@
+"pathway","criterion","target","observed","pass"
+"depress_cps","covers published anchor","Fisher-z 0.174 inside the central 95% of the implied prior","[-0.664, 0.671]",TRUE
+"depress_cps","covers published anchor","Fisher-z 0.202 inside the central 95% of the implied prior","[-0.664, 0.671]",TRUE
+"depress_cps","covers published anchor","Fisher-z 0.445 inside the central 95% of the implied prior","[-0.664, 0.671]",TRUE
+"depress_cps","covers published anchor","Fisher-z 0.468 inside the central 95% of the implied prior","[-0.664, 0.671]",TRUE
+"depress_cps","covers published anchor","Fisher-z 0.499 inside the central 95% of the implied prior","[-0.664, 0.671]",TRUE
+"depress_cps","r_XM within |r| <= 0.95",">= 0.95 of prior mass","1.000",TRUE
+"depress_cps","r_XY within |r| <= 0.95",">= 0.95 of prior mass","1.000",TRUE
+"depress_cps","r_MY within |r| <= 0.95",">= 0.95 of prior mass","1.000",TRUE
+"depress_cps","indirect effect not presupposed","P(ab > 0) in [0.30, 0.70]","0.503",TRUE
+"depress_cps","indirect effect centred near zero","|median| <= 0.050","0.0002",TRUE
+"depress_cps","indirect effect can reach a relevant magnitude","upper 98% quantile >= 0.10","0.243",TRUE
+"dissoc_del","covers published anchor","Fisher-z 0.174 inside the central 95% of the implied prior","[-0.679, 0.668]",TRUE
+"dissoc_del","covers published anchor","Fisher-z 0.202 inside the central 95% of the implied prior","[-0.679, 0.668]",TRUE
+"dissoc_del","covers published anchor","Fisher-z 0.445 inside the central 95% of the implied prior","[-0.679, 0.668]",TRUE
+"dissoc_del","covers published anchor","Fisher-z 0.468 inside the central 95% of the implied prior","[-0.679, 0.668]",TRUE
+"dissoc_del","covers published anchor","Fisher-z 0.499 inside the central 95% of the implied prior","[-0.679, 0.668]",TRUE
+"dissoc_del","r_XM within |r| <= 0.95",">= 0.95 of prior mass","1.000",TRUE
+"dissoc_del","r_XY within |r| <= 0.95",">= 0.95 of prior mass","1.000",TRUE
+"dissoc_del","r_MY within |r| <= 0.95",">= 0.95 of prior mass","1.000",TRUE
+"dissoc_del","indirect effect not presupposed","P(ab > 0) in [0.30, 0.70]","0.501",TRUE
+"dissoc_del","indirect effect centred near zero","|median| <= 0.050","0.0001",TRUE
+"dissoc_del","indirect effect can reach a relevant magnitude","upper 98% quantile >= 0.10","0.225",TRUE
+"dissoc_hal","covers published anchor","Fisher-z 0.174 inside the central 95% of the implied prior","[-0.673, 0.664]",TRUE
+"dissoc_hal","covers published anchor","Fisher-z 0.202 inside the central 95% of the implied prior","[-0.673, 0.664]",TRUE
+"dissoc_hal","covers published anchor","Fisher-z 0.445 inside the central 95% of the implied prior","[-0.673, 0.664]",TRUE
+"dissoc_hal","covers published anchor","Fisher-z 0.468 inside the central 95% of the implied prior","[-0.673, 0.664]",TRUE
+"dissoc_hal","covers published anchor","Fisher-z 0.499 inside the central 95% of the implied prior","[-0.673, 0.664]",TRUE
+"dissoc_hal","r_XM within |r| <= 0.95",">= 0.95 of prior mass","1.000",TRUE
+"dissoc_hal","r_XY within |r| <= 0.95",">= 0.95 of prior mass","1.000",TRUE
+"dissoc_hal","r_MY within |r| <= 0.95",">= 0.95 of prior mass","1.000",TRUE
+"dissoc_hal","indirect effect not presupposed","P(ab > 0) in [0.30, 0.70]","0.509",TRUE
+"dissoc_hal","indirect effect centred near zero","|median| <= 0.050","0.0006",TRUE
+"dissoc_hal","indirect effect can reach a relevant magnitude","upper 98% quantile >= 0.10","0.245",TRUE
+"negsch_cps","covers published anchor","Fisher-z 0.174 inside the central 95% of the implied prior","[-0.675, 0.672]",TRUE
+"negsch_cps","covers published anchor","Fisher-z 0.202 inside the central 95% of the implied prior","[-0.675, 0.672]",TRUE
+"negsch_cps","covers published anchor","Fisher-z 0.445 inside the central 95% of the implied prior","[-0.675, 0.672]",TRUE
+"negsch_cps","covers published anchor","Fisher-z 0.468 inside the central 95% of the implied prior","[-0.675, 0.672]",TRUE
+"negsch_cps","covers published anchor","Fisher-z 0.499 inside the central 95% of the implied prior","[-0.675, 0.672]",TRUE
+"negsch_cps","r_XM within |r| <= 0.95",">= 0.95 of prior mass","1.000",TRUE
+"negsch_cps","r_XY within |r| <= 0.95",">= 0.95 of prior mass","1.000",TRUE
+"negsch_cps","r_MY within |r| <= 0.95",">= 0.95 of prior mass","1.000",TRUE
+"negsch_cps","indirect effect not presupposed","P(ab > 0) in [0.30, 0.70]","0.499",TRUE
+"negsch_cps","indirect effect centred near zero","|median| <= 0.050","-0.0000",TRUE
+"negsch_cps","indirect effect can reach a relevant magnitude","upper 98% quantile >= 0.10","0.236",TRUE
+"negsch_del","covers published anchor","Fisher-z 0.174 inside the central 95% of the implied prior","[-0.675, 0.667]",TRUE
+"negsch_del","covers published anchor","Fisher-z 0.202 inside the central 95% of the implied prior","[-0.675, 0.667]",TRUE
+"negsch_del","covers published anchor","Fisher-z 0.445 inside the central 95% of the implied prior","[-0.675, 0.667]",TRUE
+"negsch_del","covers published anchor","Fisher-z 0.468 inside the central 95% of the implied prior","[-0.675, 0.667]",TRUE
+"negsch_del","covers published anchor","Fisher-z 0.499 inside the central 95% of the implied prior","[-0.675, 0.667]",TRUE
+"negsch_del","r_XM within |r| <= 0.95",">= 0.95 of prior mass","1.000",TRUE
+"negsch_del","r_XY within |r| <= 0.95",">= 0.95 of prior mass","1.000",TRUE
+"negsch_del","r_MY within |r| <= 0.95",">= 0.95 of prior mass","1.000",TRUE
+"negsch_del","indirect effect not presupposed","P(ab > 0) in [0.30, 0.70]","0.510",TRUE
+"negsch_del","indirect effect centred near zero","|median| <= 0.050","0.0005",TRUE
+"negsch_del","indirect effect can reach a relevant magnitude","upper 98% quantile >= 0.10","0.244",TRUE

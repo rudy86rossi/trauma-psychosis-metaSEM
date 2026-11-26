@@ -1,0 +1,2 @@
+"fits","max_rhat","min_ess_bulk","min_ess_tail","divergences","treedepth_hits","min_ebfmi","models_escalated","escalation_steps","primary_fits","sensitivity_fits","sensitivity_divergence_cap","sensitivity_fits_with_divergence","tolerated","ok"
+551,1.00435253956892,1605.28150881061,2033.58617594181,1,0,0.495439173661075,160,176,55,496,4,1,"loso_brms|depress_cps|female|S029 (1)",TRUE
