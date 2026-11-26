@@ -17,7 +17,7 @@ frequentist_slopes <- function(cfg, lock) {
   pairs <- PAIRS(cfg)
   out <- list()
 
-  for (key in PATH_NAMES(cfg)) {
+  for (key in SYNTH_NAMES(lock)) {
     df <- lock$analysis[[key]]
     V  <- metaSEM::asyCov(
       lapply(seq_len(nrow(df)), function(i) make_R(df$r_XM[i], df$r_XY[i], df$r_MY[i])),
@@ -29,7 +29,7 @@ frequentist_slopes <- function(cfg, lock) {
       idx <- which(!is.na(df[[m]]))
       if (length(idx) < 3) next
       spec <- lock$support[lock$support$pathway == key & lock$support$moderator == m, ]
-      rp   <- lock$reportability
+      rp   <- synth_reportability(lock)
       status <- rp$status[rp$pathway == key & rp$moderator == m]
 
       x <- df[[m]][idx]

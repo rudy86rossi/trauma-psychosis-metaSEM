@@ -79,6 +79,17 @@ build_data_lock <- function(cfg, root = ".") {
   })
   names(ANALYSIS) <- PATH_NAMES(cfg)
 
+  ## ---- synthesis eligibility ----------------------------------------------
+  ## Every pathway stays extracted and locked above; only the ELIGIBLE set is
+  ## fitted and reported. The excluded pathways are kept as an explicit record.
+  ELIG <- synthesis_eligibility(cfg, ANALYSIS)
+  SYNTH <- ELIG$pathway[ELIG$eligible]
+  if (!length(SYNTH)) stop("No pathway meets the synthesis minimum.")
+
+  ## ---- triplet source, for the protocol-specified conversion sensitivity --
+  TSRC <- read_triplet_source(file.path(root, "data/provenance/triplet_source.csv"),
+                              ANALYSIS[SYNTH])
+
   ## Alternative-instrument sensitivity: REPLACE the primary triplet from the
   ## affected sample, never add alongside it.
   ALTERNATIVE <- lapply(PATH_NAMES(cfg), function(k) {
@@ -142,6 +153,7 @@ build_data_lock <- function(cfg, root = ".") {
        samples = samples, sample_map = smap, review_queue = review_queue,
        effects = effects, support = SUPPORT, reportability = REPORT,
        vz_comparison = vzc, hashes = locked$hashes, exclusions = EXCLUSIONS,
+       synthesis = SYNTH, synthesis_eligibility = ELIG, triplet_source = TSRC,
        ledger = locked$ledger, quality = locked$quality)
 }
 
@@ -187,6 +199,8 @@ write_data_lock <- function(lock, root = ".") {
   write.csv(lock$reportability, file.path(prov, "reportability.csv"), row.names = FALSE, na = "")
   write.csv(lock$support,       file.path(prov, "contrast_support.csv"), row.names = FALSE, na = "")
   write.csv(lock$vz_comparison, file.path(prov, "vz_comparison.csv"), row.names = FALSE, na = "")
+  write.csv(lock$synthesis_eligibility, file.path(prov, "synthesis_eligibility.csv"),
+            row.names = FALSE, na = "")
 
   ## Only declared multi-instrument groups belong here. A superseded report is a
   ## different decision and is not an instrument choice.
@@ -206,4 +220,30 @@ write_data_lock <- function(lock, root = ".") {
   write.csv(ic, file.path(prov, "instrument_choices.csv"), row.names = FALSE, na = "")
 
   path
+}
+
+
+#' Read the per-triplet source classification and check it covers EXACTLY the
+#' primary triplets of the eligible pathways: one row each, a known type, and no
+#' row for anything that is not analysed. A missing or stale classification is
+#' fatal, because the conversion sensitivity would otherwise silently keep or
+#' drop the wrong cohorts.
+read_triplet_source <- function(path, analysis) {
+  if (!file.exists(path)) stop("Missing ", path, ".")
+  ts <- read.csv(path, stringsAsFactors = FALSE, na.strings = "")
+  need <- c("effect_id", "pathway", "sample_id", "source_type")
+  if (length(setdiff(need, names(ts))))
+    stop(basename(path), " lacks: ", paste(setdiff(need, names(ts)), collapse = ", "))
+  types <- c("direct", "converted", "adjusted", "untraceable")
+  bad <- setdiff(unique(ts$source_type), types)
+  if (length(bad)) stop(basename(path), " has unknown source_type: ", paste(bad, collapse = ", "))
+  want <- do.call(rbind, lapply(analysis, function(d) d[, c("effect_id", "pathway", "sample_id")]))
+  kw <- paste(want$pathway, want$sample_id, want$effect_id)
+  kt <- paste(ts$pathway, ts$sample_id, ts$effect_id)
+  if (anyDuplicated(kt)) stop(basename(path), " classifies a triplet twice.")
+  miss <- setdiff(kw, kt); extra <- setdiff(kt, kw)
+  if (length(miss) || length(extra))
+    stop(basename(path), " does not match the analysed triplets. Unclassified: ",
+         paste(miss, collapse = "; "), ". Not analysed: ", paste(extra, collapse = "; "), ".")
+  ts
 }

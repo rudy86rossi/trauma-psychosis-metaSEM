@@ -3,7 +3,7 @@
 Prepared by ricardotwumasi. British English throughout. Results are in
 `BAYESIAN_METAREG_RESULTS.md`.
 
-Generated from `results/run_abc9305d0d01/`. Version numbers and scale constants are read from the run manifest and `config/analysis.yml`.
+Generated from `results/run_0c04f897e2d1/`. Version numbers and scale constants are read from the run manifest and `config/analysis.yml`.
 
 ## Methods text for the manuscript
 
@@ -51,25 +51,21 @@ A contrast clamped to observed support therefore keeps the same per-unit thresho
 | Pathway | Moderator | Nominal | Reported | Span (units) | Prior SD (per unit) | SESOI (per unit) | Bound applied | Decision |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Depression to composite psychosis | age | 20 to 30 | 20 to 30 | 1.00 | 0.200 | 0.050 | 0.050 | permitted |
-| Dissociation to composite psychosis | age | 20 to 30 | 20 to 30 | 1.00 | 0.200 | 0.050 | 0.050 | permitted |
 | Dissociation to delusions | age | 20 to 30 | 20 to 30 | 1.00 | 0.200 | 0.050 | 0.050 | permitted |
 | Dissociation to hallucinations | age | 20 to 30 | 20 to 30 | 1.00 | 0.200 | 0.050 | 0.050 | permitted |
 | Negative schema to composite psychosis | age | 20 to 30 | 20 to 30 | 1.00 | 0.200 | 0.050 | 0.050 | permitted |
 | Negative schema to delusions | age | 20 to 30 | 20 to 30 | 1.00 | 0.200 | 0.050 | 0.050 | permitted |
 | Depression to composite psychosis | clinical | 0 to 1 | 0 to 1 | 1.00 | 0.200 | 0.050 | 0.050 | permitted |
-| Dissociation to composite psychosis | clinical | 0 to 1 | 0 to 1 | 1.00 | 0.200 | 0.050 | 0.050 | not reported |
 | Dissociation to delusions | clinical | 0 to 1 | 0 to 1 | 1.00 | 0.200 | 0.050 | 0.050 | permitted |
 | Dissociation to hallucinations | clinical | 0 to 1 | 0 to 1 | 1.00 | 0.200 | 0.050 | 0.050 | permitted |
 | Negative schema to composite psychosis | clinical | 0 to 1 | 0 to 1 | 1.00 | 0.200 | 0.050 | 0.050 | permitted |
 | Negative schema to delusions | clinical | 0 to 1 | 0 to 1 | 1.00 | 0.200 | 0.050 | 0.050 | permitted |
 | Depression to composite psychosis | female | 40 to 60 | 42.4 to 60 | 1.76 | 0.100 | 0.025 | 0.044 | permitted |
-| Dissociation to composite psychosis | female | 40 to 60 | 52 to 60 | 0.80 | 0.100 | 0.025 | 0.020 | permitted |
 | Dissociation to delusions | female | 40 to 60 | 40 to 60 | 2.00 | 0.100 | 0.025 | 0.050 | permitted |
 | Dissociation to hallucinations | female | 40 to 60 | 40 to 60 | 2.00 | 0.100 | 0.025 | 0.050 | permitted |
 | Negative schema to composite psychosis | female | 40 to 60 | 40 to 60 | 2.00 | 0.100 | 0.025 | 0.050 | permitted |
 | Negative schema to delusions | female | 40 to 60 | 40 to 60 | 2.00 | 0.100 | 0.025 | 0.050 | permitted |
 | Depression to composite psychosis | nos | 5 to 6 | 5 to 6 | 1.00 | 0.200 | 0.050 | 0.050 | permitted |
-| Dissociation to composite psychosis | nos | 5 to 6 | 5 to 6 | 1.00 | 0.200 | 0.050 | 0.050 | permitted |
 | Dissociation to delusions | nos | 5 to 6 | 5 to 6 | 1.00 | 0.200 | 0.050 | 0.050 | permitted |
 | Dissociation to hallucinations | nos | 5 to 6 | 5 to 6 | 1.00 | 0.200 | 0.050 | 0.050 | permitted |
 | Negative schema to composite psychosis | nos | 5 to 6 | 5 to 6 | 1.00 | 0.200 | 0.050 | 0.050 | permitted |
@@ -97,8 +93,8 @@ These are scale-informed shrinkage priors, not claims that the effects are null.
 
 | Pathway | vs asyCov(individual) | vs asyCov(weighted) |
 | --- | --- | --- |
-| Dissociation to hallucinations | 1.74e-03 | 6.98e-02 |
-| Dissociation to delusions | 1.74e-03 | 4.82e-02 |
+| Dissociation to hallucinations | 1.74e-03 | 6.87e-02 |
+| Dissociation to delusions | 1.74e-03 | 4.98e-02 |
 | Dissociation to composite psychosis | 1.74e-03 | 9.97e-03 |
 | Negative schema to composite psychosis | 5.13e-04 | 6.36e-03 |
 | Negative schema to delusions | 6.79e-04 | 3.54e-03 |
@@ -110,7 +106,7 @@ The first difference has a single identifiable cause: applying the delta method 
 
 **Simulation-based calibration.** Formal rank-based SBC (Talts et al. 2018) over 6 prespecified scenarios, 100 datasets simulated per scenario, exercising the intercept-only code path, continuous and binary moderation, the smallest and largest number of studies, contrasting sampling-covariance structures and a clamped reporting contrast. Truth was drawn from the prior and data from the joint model at the real design; the rank of each truth among 500 retained posterior draws was recorded. Thinning was fixed before any rank distribution was inspected and ties were broken at random.
 
-The primary rank-uniformity test uses the 97 to 100 datasets per scenario whose fit met every diagnostic threshold. A rank taken from a fit that did not converge is not a draw from the posterior the model defines, so it cannot separate a miscalibrated model from a failed sampler. Excluding such fits silently would be the opposite error, because the hardest replicates are the likeliest to fail, so all 600 attempted fits are retained in the audit table with their status, and the same tests are repeated over all ranks and reported as sensitivity evidence.
+The primary rank-uniformity test uses the 96 to 100 datasets per scenario whose fit met every diagnostic threshold. A rank taken from a fit that did not converge is not a draw from the posterior the model defines, so it cannot separate a miscalibrated model from a failed sampler. Excluding such fits silently would be the opposite error, because the hardest replicates are the likeliest to fail, so all 600 attempted fits are retained in the audit table with their status, and the same tests are repeated over all ranks and reported as sensitivity evidence.
 
 This is a screening-level check, not high-powered proof of calibration, and it is conditional on the plug-in sampling covariance matrices: it validates the implemented likelihood, the generated quantities and the sampler given those matrices, not the uncertainty arising from estimating them from participant-level data.
 
@@ -126,10 +122,10 @@ This is a screening-level check, not high-powered proof of calibration, and it i
 | --- | --- |
 | R | R version 4.4.2 (2024-10-31) |
 | CmdStan | 2.36.0 |
-| Analysis identifier | abc9305d0d01 |
-| Source commit | d12bf4b2a6e9 |
-| Locked analysis table | 6aa4705709eb0db8 |
-| Configuration | 2a2f0502b6558902 |
+| Analysis identifier | 0c04f897e2d1 |
+| Source commit | 7d079f0a7647 |
+| Locked analysis table | 437186d92671c312 |
+| Configuration | a510186fac7a2916 |
 | Stan source | 0f95ec7ba6f05783 |
 | renv lockfile | 4e0bec03ba9bef9e |
 
@@ -139,7 +135,7 @@ The analysis identifier is derived deterministically from the frozen source comm
 The whole analysis is one `targets` graph. Outputs are written to a staging area and promoted atomically only after every gate passes, with the run manifest written last, so an interrupted attempt cannot resemble a finished release. There is no second, sequential driver.
 
 
-The fit plan contained 637 model specifications with stable identifiers. The release gate requires exact set equality between the expected and completed identifiers; the expected count is derived from the plan and is not recorded as a constant anywhere.
+The fit plan contained 551 model specifications with stable identifiers. The release gate requires exact set equality between the expected and completed identifiers; the expected count is derived from the plan and is not recorded as a constant anywhere.
 
 
 No modified source workbook is committed. The only binary inputs are the upstream extraction workbooks, and every departure from them is a row in `data/provenance/corrections.csv` or `data/provenance/quality_scores.csv`. The build verifies the upstream hash, requires each correction to address exactly one cell holding exactly the value it claims to replace, and verifies the row fingerprint before writing.

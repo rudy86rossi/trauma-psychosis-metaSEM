@@ -1,0 +1,7 @@
+"scenario","attempted","used_primary","used_all_ranks"
+"sbc_binary_k10",100,100,100
+"sbc_clamped_k5",100,99,100
+"sbc_cont_k10",100,100,100
+"sbc_cont_k5",100,99,100
+"sbc_null_k10",100,96,100
+"sbc_smallest_k4",100,100,100

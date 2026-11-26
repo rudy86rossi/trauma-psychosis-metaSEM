@@ -1,0 +1,2 @@
+"pathway","moderator","coordinate","layer","primary_decision","primary_median","n_deletions","n_reportable_deletions","n_not_reportable_deletions","n_retaining_decision","median_min","median_max"
+"negsch_del","clinical","r_MY","stan_primary","reject null interval",-0.28257,5,3,2,0,-0.277466,-0.253733

@@ -12,6 +12,12 @@
 # =============================================================================
 
 fmt <- function(x, d = 3) formatC(x, format = "f", digits = d)
+fmt_paths <- function(st, status) {
+  d <- st[st$status == status, ]
+  if (!nrow(d)) return("no pathway")
+  paste(sprintf("%s (%d of %d cohorts direct)", PATHWAY_PROSE[d$pathway], d$k_direct, d$k_primary),
+        collapse = "; ")
+}
 pct <- function(x, d = 1) paste0(formatC(100 * x, format = "f", digits = d), " per cent")
 ci  <- function(lo, hi, d = 3) sprintf("[%s, %s]", fmt(lo, d), fmt(hi, d))
 
@@ -50,6 +56,8 @@ read_run <- function(run_dir) {
     prior_stab  = rd("tables", "prior_grid_stability.csv"),
     decided     = rd("tables", "decisions.csv"),
     vz          = rd("tables", "vz_comparison.csv"),
+    eligibility = rd("tables", "synthesis_eligibility.csv"),
+    direct_r    = rd("tables", "direct_correlation_sensitivity.csv"),
     pmed_released  = rd("tables", "proportion_mediated.csv"),
     pmed_withheld  = rd("tables", "proportion_mediated_withheld.csv"),
     pmed_audit     = rd("tables", "proportion_mediated_audit.csv"),
@@ -179,7 +187,8 @@ writeup_proportion_mediated <- function(cfg, R) {
                    sens_vz_weighted = "the weighted sampling-covariance construction",
                    sens_alt_instrument = "the alternative instrument",
                    sens_prior_grid = "the prior grid",
-                   sens_loso_stan = "cohort deletion")
+                   sens_loso_stan = "cohort deletion",
+                   sens_direct_r = "the direct-correlation restriction")
   st <- R$pmed_stability
   if (!is.null(st) && nrow(st)) {
     ## The prior predictive fits are not refits of the posterior: their ratio is
@@ -191,8 +200,9 @@ writeup_proportion_mediated <- function(cfg, R) {
     add(sprintf(paste(
       "Each pathway was refitted under a robust Student-t likelihood, a weighted",
       "sampling-covariance construction, an alternative instrument where one exists, a",
-      "prior grid on the intercept and heterogeneity scales, and every single-cohort",
-      "deletion: %d refits in total. The largest shift in any pathway's median across",
+      "prior grid on the intercept and heterogeneity scales, every single-cohort",
+      "deletion and, where it was estimable, a restriction to triplets taken directly",
+      "from a correlation matrix: %d refits in total. The largest shift in any pathway's median across",
       "all of them was %s percentage points. The released-or-withheld classification",
       "was unchanged in %d of %d pathway-by-class comparisons%s. Per-class detail is in",
       "`tables/proportion_mediated_stability.csv`."),
@@ -203,6 +213,33 @@ writeup_proportion_mediated <- function(cfg, R) {
                 paste(sprintf("%s under %s", PATHWAY_PROSE[unstable$pathway],
                               CLASS_PROSE[unstable$fit_class]), collapse = ", "))
       else ""), "")
+  }
+
+  ## Synthesis eligibility and the protocol-specified conversion sensitivity.
+  el <- R$eligibility
+  if (!is.null(el) && nrow(el)) {
+    ex <- el[!el$eligible, ]
+    add(sprintf(paste(
+      "Pathways were synthesised only where at least %d cohorts contributed, counting each",
+      "distinct sample identifier once,",
+      "in line with the minimum of five studies specified in the PROSPERO",
+      "pre-registration. %d of %d extracted pathways met this%s."),
+      el$min_independent_cohorts[1], sum(el$eligible), nrow(el),
+      if (nrow(ex)) sprintf("; %s was extracted and locked but not synthesised",
+                            paste(sprintf("%s (k = %d)", PATHWAY_PROSE[ex$pathway], ex$k_independent),
+                                  collapse = ", ")) else ""), "")
+  }
+  dr <- R$direct_r
+  if (!is.null(dr) && nrow(dr)) {
+    st <- unique(dr[, c("pathway", "status", "k_primary", "k_direct")])
+    add(sprintf(paste(
+      "As the protocol specifies, effect sizes obtained by conversion rather than read",
+      "from a correlation matrix were examined in a sensitivity analysis restricted to",
+      "direct correlations. It was fitted for %s; it was identical to the primary model",
+      "for %s; and it was not estimable, because fewer than the minimum number of",
+      "cohorts would remain, for %s. Values are in",
+      "`tables/direct_correlation_sensitivity.csv`."),
+      fmt_paths(st, "fitted"), fmt_paths(st, "identical"), fmt_paths(st, "not estimable")), "")
   }
 
   add(paste(

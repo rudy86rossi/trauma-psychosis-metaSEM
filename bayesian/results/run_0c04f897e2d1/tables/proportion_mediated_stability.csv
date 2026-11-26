@@ -1,0 +1,28 @@
+"pathway","label","fit_class","n_refits","primary_median","median_min","median_max","max_abs_shift_from_primary","n_released","n_withheld","classification_stable"
+"depress_cps","Depression to composite psychosis","sens_loso_stan",5,33.3891,27.11875,37.0472,6.27035,5,0,TRUE
+"depress_cps","Depression to composite psychosis","sens_prior_grid",4,33.3891,29.6248,34.32435,3.7643,4,0,TRUE
+"depress_cps","Depression to composite psychosis","sens_robust_t",1,33.3891,32.2529,32.2529,1.1362,1,0,TRUE
+"depress_cps","Depression to composite psychosis","sens_vz_weighted",1,33.3891,31.08805,31.08805,2.30105,1,0,TRUE
+"depress_cps","Depression to composite psychosis","stan_primary",1,33.3891,33.3891,33.3891,0,1,0,TRUE
+"dissoc_del","Dissociation to delusions","sens_direct_r",1,49.97165,42.7896,42.7896,7.18205,1,0,TRUE
+"dissoc_del","Dissociation to delusions","sens_loso_stan",7,49.97165,43.0592,55.0953,6.91244999999999,7,0,TRUE
+"dissoc_del","Dissociation to delusions","sens_prior_grid",4,49.97165,43.8633,51.06835,6.10835,4,0,TRUE
+"dissoc_del","Dissociation to delusions","sens_robust_t",1,49.97165,47.6199,47.6199,2.35175,1,0,TRUE
+"dissoc_del","Dissociation to delusions","sens_vz_weighted",1,49.97165,44.9662,44.9662,5.00545,1,0,TRUE
+"dissoc_del","Dissociation to delusions","stan_primary",1,49.97165,49.97165,49.97165,0,1,0,TRUE
+"dissoc_hal","Dissociation to hallucinations","sens_direct_r",1,61.4998,57.1256,57.1256,4.3742,1,0,TRUE
+"dissoc_hal","Dissociation to hallucinations","sens_loso_stan",10,61.4998,57.0928,64.82655,4.407,5,5,FALSE
+"dissoc_hal","Dissociation to hallucinations","sens_prior_grid",4,61.4998,53.6511,63.43165,7.84869999999999,4,0,TRUE
+"dissoc_hal","Dissociation to hallucinations","sens_robust_t",1,61.4998,61.4325,61.4325,0.0672999999999888,1,0,TRUE
+"dissoc_hal","Dissociation to hallucinations","sens_vz_weighted",1,61.4998,60.31035,60.31035,1.18944999999999,1,0,TRUE
+"dissoc_hal","Dissociation to hallucinations","stan_primary",1,61.4998,61.4998,61.4998,0,1,0,TRUE
+"negsch_cps","Negative schema to composite psychosis","sens_loso_stan",7,20.77955,15.6217,27.1855,6.40595,2,5,FALSE
+"negsch_cps","Negative schema to composite psychosis","sens_prior_grid",4,20.77955,16.5968,22.16285,4.18275,4,0,TRUE
+"negsch_cps","Negative schema to composite psychosis","sens_robust_t",1,20.77955,20.2936,20.2936,0.485950000000003,1,0,TRUE
+"negsch_cps","Negative schema to composite psychosis","sens_vz_weighted",1,20.77955,20.81515,20.81515,0.0355999999999987,1,0,TRUE
+"negsch_cps","Negative schema to composite psychosis","stan_primary",1,20.77955,20.77955,20.77955,0,1,0,TRUE
+"negsch_del","Negative schema to delusions","sens_loso_stan",5,25.68115,20.7588,27.14855,4.92235,0,5,FALSE
+"negsch_del","Negative schema to delusions","sens_prior_grid",4,25.68115,23.51305,26.1329,2.1681,2,2,FALSE
+"negsch_del","Negative schema to delusions","sens_robust_t",1,25.68115,24.77005,24.77005,0.911100000000005,1,0,TRUE
+"negsch_del","Negative schema to delusions","sens_vz_weighted",1,25.68115,26.07,26.07,0.388849999999998,0,1,FALSE
+"negsch_del","Negative schema to delusions","stan_primary",1,25.68115,25.68115,25.68115,0,1,0,TRUE

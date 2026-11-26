@@ -21,10 +21,15 @@ build_fit_plan <- function(cfg, lock) {
   add <- function(...) rows[[length(rows) + 1L]] <<- data.frame(..., stringsAsFactors = FALSE)
 
   mods_all <- c(list(NULL), as.list(MOD_NAMES(cfg)))
-  rp <- lock$reportability
+  rp <- synth_reportability(lock)
 
-  for (key in PATH_NAMES(cfg)) {
+  for (key in SYNTH_NAMES(lock)) {
     df <- lock$analysis[[key]]
+    ## A single-cohort deletion from a pathway at the minimum leaves fewer
+    ## cohorts than the synthesis rule requires. Such refits are legitimate
+    ## deletion sensitivities, not syntheses, and are labelled as such.
+    loso_variant <- if (length(unique(df$sample_id)) - 1L < cfg$synthesis$min_independent_cohorts)
+      "leave_one_out_below_minimum" else "leave_one_out"
     for (m in mods_all) {
       mname <- m %||% "null"
       status <- if (is.null(m)) "ok" else rp$status[rp$pathway == key & rp$moderator == m]
@@ -88,7 +93,20 @@ build_fit_plan <- function(cfg, lock) {
             add(fit_class = "sens_loso_stan",
                 fit_id = sprintf("loso_stan|%s|%s|%s", key, mname, s),
                 pathway = key, moderator = mname, reportable = status,
-                variant = "leave_one_out", drop_sample = s)
+                variant = loso_variant, drop_sample = s)
+        }
+        ## Protocol-specified conversion sensitivity: keep only triplets taken
+        ## directly from a correlation matrix. Planned only when it removes
+        ## something AND leaves the cohort minimum; the remaining cases are
+        ## reported by direct_r_plan() as identical or not estimable, never
+        ## silently omitted.
+        if (isTRUE(cfg$sensitivity$direct_correlation_only)) {
+          dp <- direct_r_plan(cfg, lock, key)
+          if (identical(dp$status, "fitted"))
+            add(fit_class = "sens_direct_r",
+                fit_id = sprintf("direct_r|%s|%s", key, mname),
+                pathway = key, moderator = mname, reportable = status,
+                variant = "direct_correlations_only", drop_sample = dp$drop)
         }
       }
 
@@ -121,11 +139,11 @@ build_fit_plan <- function(cfg, lock) {
             add(fit_class = "sens_loso_stan",
                 fit_id = sprintf("loso_stan|%s|%s|%s", key, mname, s),
                 pathway = key, moderator = mname, reportable = status,
-                variant = "leave_one_out", drop_sample = s)
+                variant = loso_variant, drop_sample = s)
             add(fit_class = "sens_loso_brms",
                 fit_id = sprintf("loso_brms|%s|%s|%s", key, mname, s),
                 pathway = key, moderator = mname, reportable = status,
-                variant = "leave_one_out", drop_sample = s)
+                variant = loso_variant, drop_sample = s)
           }
         }
       }
@@ -162,10 +180,43 @@ variant_priors <- function(cfg, variant) {
   p
 }
 
+#' What the conversion sensitivity does for one pathway: "fitted" (with the
+#' samples it drops, joined by ";"), "identical" (every triplet is direct, so the
+#' refit would be the primary model), or "not estimable" (fewer than the cohort
+#' minimum would remain).
+direct_r_plan <- function(cfg, lock, key) {
+  ts <- lock$triplet_source[lock$triplet_source$pathway == key, ]
+  drop <- sort(unique(ts$sample_id[ts$source_type != "direct"]))
+  k_all <- length(unique(lock$analysis[[key]]$sample_id))
+  k_left <- k_all - length(drop)
+  status <- if (!length(drop)) "identical"
+            else if (k_left < cfg$synthesis$min_independent_cohorts) "not estimable"
+            else "fitted"
+  list(pathway = key, status = status, k_primary = k_all, k_direct = k_left,
+       drop = if (length(drop)) paste(drop, collapse = ";") else NA_character_)
+}
+
+#' One row per eligible pathway describing the conversion sensitivity.
+direct_r_summary <- function(cfg, lock) {
+  do.call(rbind, lapply(SYNTH_NAMES(lock), function(k) {
+    dp <- direct_r_plan(cfg, lock, k)
+    data.frame(pathway = k, status = dp$status, k_primary = dp$k_primary,
+               k_direct = dp$k_direct, dropped_samples = dp$drop,
+               stringsAsFactors = FALSE)
+  }))
+}
+
 #' Drop one sample from a pathway's data and its aligned V_z and moderator.
-drop_one_sample <- function(cfg, lock, key, mod, sample_id) {
+drop_one_sample <- function(cfg, lock, key, mod, sample_id)
+  drop_samples(cfg, lock, key, mod, sample_id)
+
+#' Drop a set of samples from a pathway's data and its aligned V_z and moderator.
+drop_samples <- function(cfg, lock, key, mod, sample_ids) {
   df <- lock$analysis[[key]]
-  keep <- df$sample_id != sample_id
+  miss <- setdiff(sample_ids, df$sample_id)
+  if (length(miss)) stop("Cannot drop ", paste(miss, collapse = ", "), " from ", key,
+                         ": not in the pathway.")
+  keep <- !(df$sample_id %in% sample_ids)
   d <- df[keep, , drop = FALSE]
   v <- lock$vz_chol[[key]][keep]
   ## The moderator is recentred on the surviving studies, and the reported
@@ -245,6 +296,10 @@ run_fit <- function(cfg, lock, row) {
 
   if (row$fit_class %in% c("sens_loso_stan", "sens_loso_brms")) {
     dd   <- drop_one_sample(cfg, lock, key, mod, row$drop_sample)
+    df   <- dd$df; vz <- dd$vz; mods <- dd$mods
+  }
+  if (identical(row$fit_class, "sens_direct_r")) {
+    dd   <- drop_samples(cfg, lock, key, mod, strsplit(row$drop_sample, ";", fixed = TRUE)[[1]])
     df   <- dd$df; vz <- dd$vz; mods <- dd$mods
   }
 

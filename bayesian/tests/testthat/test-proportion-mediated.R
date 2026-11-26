@@ -276,7 +276,7 @@ test_that("unmoderated models carry a prior grid and a cohort-deletion analysis"
   # quantity in the release with no prior and no deletion sensitivity at all.
   plan <- build_fit_plan(CFG, LOCK)
   u <- plan[plan$moderator == "null", ]
-  for (k in PATH_NAMES(CFG)) {
+  for (k in SYNTH_NAMES(LOCK)) {
     g <- u[u$pathway == k, ]
     expect_gt(sum(g$fit_class == "sens_prior_grid"), 0)
     expect_equal(sum(g$fit_class == "sens_loso_stan"),

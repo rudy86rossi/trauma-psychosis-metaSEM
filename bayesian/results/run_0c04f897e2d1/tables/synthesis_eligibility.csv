@@ -1,0 +1,7 @@
+"pathway","k_independent","min_independent_cohorts","eligible","rule"
+"dissoc_hal",10,5,TRUE,"at least 5 independent cohorts (PROSPERO CRD42024542972, version 2.0)"
+"dissoc_del",7,5,TRUE,"at least 5 independent cohorts (PROSPERO CRD42024542972, version 2.0)"
+"dissoc_cps",4,5,FALSE,"at least 5 independent cohorts (PROSPERO CRD42024542972, version 2.0)"
+"negsch_cps",7,5,TRUE,"at least 5 independent cohorts (PROSPERO CRD42024542972, version 2.0)"
+"negsch_del",5,5,TRUE,"at least 5 independent cohorts (PROSPERO CRD42024542972, version 2.0)"
+"depress_cps",5,5,TRUE,"at least 5 independent cohorts (PROSPERO CRD42024542972, version 2.0)"
