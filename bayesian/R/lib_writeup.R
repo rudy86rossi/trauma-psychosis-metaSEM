@@ -220,7 +220,8 @@ writeup_proportion_mediated <- function(cfg, R) {
   if (!is.null(el) && nrow(el)) {
     ex <- el[!el$eligible, ]
     add(sprintf(paste(
-      "Pathways were synthesised only where at least %d independent cohorts contributed,",
+      "Pathways were synthesised only where at least %d cohorts contributed, counting each",
+      "distinct sample identifier once,",
       "in line with the minimum of five studies specified in the PROSPERO",
       "pre-registration. %d of %d extracted pathways met this%s."),
       el$min_independent_cohorts[1], sum(el$eligible), nrow(el),
