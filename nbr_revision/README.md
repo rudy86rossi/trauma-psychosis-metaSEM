@@ -11,3 +11,7 @@ Copies of the scripts used to answer the *Neuroscience and Biobehavioral Reviews
 | `track_main.py` | Tracked changes, as Ricardo Twumasi, to the manuscript, Table 2 and the Abstract. Every number is formatted from the release extracts. |
 | `verify_tracked.py` | Checks that rejecting only the new revisions restores each original, that earlier revisions and comments are intact, and that every new number traces to the release. |
 | `docx_track.py` | Word tracked-changes helper used by the two scripts above. |
+| `write_responses.py` | Turns RT's ten "Plan (RT):" notes in the rebuttal into "Response:" text and deletes the co-author primer. Edits only those runs, keeps co-author notes verbatim, and checks every quoted number against the release extracts before writing. |
+| `verify_rebuttal.py` | Checks that only the ten plan paragraphs and the eleven primer paragraphs changed, that every other package part is byte-identical, and that no em dash or US spelling was introduced. |
+| `fix_review.py` | Applies the statistical-review fixes on top of the manuscript, Table 2 and Abstract as they stood after RT's own Word edits, rather than regenerating them. Fixes inside RT's pending insertions edit that text in place; fixes to original text are new tracked changes; co-author points are comments. |
+| `verify_fixes.py` | Checks that nothing outside RT's revisions changed, that every other revision and comment is intact, and prints each inserted fragment for review. A deliberately altered copy fails, as it should. |

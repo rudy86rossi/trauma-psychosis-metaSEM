@@ -131,6 +131,7 @@ n_pix = sum(float(r["ab_pi_lo"]) > 0 for r in alt)
 n_wh = sum(r["pct_status"] != "released" for r in alt)
 ## The note attributes every PI that excludes zero to the narrow heterogeneity prior; check it.
 assert all(r["prior"] == "tau_sd=0.1" for r in alt if float(r["ab_pi_lo"]) > 0)
+assert all(r["pathway"] == "negsch_cps" for r in alt if float(r["ab_crI_lo"]) <= 0)
 
 note = d.add_paragraph()
 run(note, "Note. ", font="Arial", size=9, bold=True)
@@ -147,9 +148,11 @@ run(note, (
     f"Across the 20 alternative-prior refits, the lowest posterior probability of a positive "
     f"indirect effect was approximately {minp:.3f} ({minp:.4f}), and ab changed by "
     f"{min(chg):.1f}% to +{max(chg):.1f}% relative to the primary fit. The CrI included zero in "
-    f"{n_cri0} refits, and the PI excluded zero in {n_pix}, all under the narrower heterogeneity "
-    "prior (στ 0.10), which shrinks the between-cohort spread and so narrows the PI by "
-    "assumption rather than through data. Direction was therefore robust to the priors examined; "
+    f"{n_cri0} refits, all for negative schemas to composite psychosis. The PI excluded zero in "
+    f"{n_pix}, all under the narrower heterogeneity prior (στ 0.10), which shrinks the "
+    "between-cohort spread and so narrows the PI by assumption rather than through data. "
+    "Interval limits that round to zero at three decimals are shown to four, so that their side "
+    "of zero is visible. Direction was therefore robust to the priors examined; "
     "magnitude, interval exclusion and prediction were less so. "
     "The percentage is 100 ab / (c′ + ab), a post hoc estimand, reported only where the fit passed "
     "every sampler diagnostic, P(total > 0.05) ≥ 0.95 and P(0 < percentage < 100) ≥ 0.95; "
